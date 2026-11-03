@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --canvas: #f6f7f9;
+  --surface: #ffffff;
+  --surface-muted: #f9fafb;
+  --primary: #496a91;
+  --ink: #273444;
+  --line: #e2e6eb;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c9d1da transparent;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: "Manrope Variable", "Manrope", "Inter", system-ui, sans-serif;
+  font-feature-settings: "cv11" on, "ss01" on;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(73, 106, 145, 0.16);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply text-ink;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+@layer components {
+  .app-card {
+    @apply rounded-card border border-line bg-surface shadow-card;
+  }
+
+  .label {
+    @apply font-mono text-[10px] uppercase tracking-[0.14em] text-ink-faint;
+  }
+
+  .btn {
+    @apply inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-transparent px-3.5 py-2 text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary-500 text-white hover:bg-primary-600;
+  }
+
+  .btn-secondary {
+    @apply btn border-line-strong bg-surface text-ink hover:bg-surface-muted;
+  }
+
+  .btn-ghost {
+    @apply btn text-ink-muted hover:bg-surface-sunken hover:text-ink;
+  }
+
+  .btn-danger {
+    @apply btn border-danger-100 bg-danger-50 text-danger-600 hover:bg-danger-100;
+  }
+
+  .field {
+    @apply w-full rounded-md border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-faint focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-200 disabled:cursor-not-allowed disabled:bg-surface-muted;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-xs font-semibold text-ink-soft;
+  }
+
+  .table-cell {
+    @apply px-4 py-3 text-sm text-ink-soft;
+  }
+
+  .table-head {
+    @apply px-4 py-2.5 text-left font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-ink-faint;
+  }
+
+  .prose-mirai {
+    @apply text-sm leading-6 text-ink-soft;
+  }
+
+  .prose-mirai h1 {
+    @apply mb-3 mt-6 text-xl font-semibold text-ink;
+  }
+
+  .prose-mirai h2 {
+    @apply mb-2 mt-5 text-lg font-semibold text-ink;
+  }
+
+  .prose-mirai h3 {
+    @apply mb-2 mt-4 text-base font-semibold text-ink;
+  }
+
+  .prose-mirai p {
+    @apply mb-3;
+  }
+
+  .prose-mirai ul {
+    @apply mb-3 list-disc pl-5;
+  }
+
+  .prose-mirai ol {
+    @apply mb-3 list-decimal pl-5;
+  }
+
+  .prose-mirai code {
+    @apply rounded bg-surface-sunken px-1 py-0.5 font-mono text-[12px];
+  }
+
+  .prose-mirai pre {
+    @apply mb-3 overflow-x-auto rounded-md border border-line bg-surface-sunken p-3 font-mono text-xs;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

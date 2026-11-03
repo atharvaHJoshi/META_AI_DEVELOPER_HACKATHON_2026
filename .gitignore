@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+coverage/
+frontend/dist/
+backend/dist/
+aiml/dist/
+packages/*/dist/
+.evaluation-cache/
+pgdata/
+
+# Local archive of the superseded SPMT project
+.archive/
+*.tsbuildinfo
+
+# Playwright output
+test-results/
+playwright-report/
