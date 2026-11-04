@@ -120,6 +120,14 @@ textarea {
     @apply text-sm leading-6 text-ink-soft;
   }
 
+  .prose-mirai > :first-child {
+    margin-top: 0;
+  }
+
+  .prose-mirai > :last-child {
+    margin-bottom: 0;
+  }
+
   .prose-mirai h1 {
     @apply mb-3 mt-6 text-xl font-semibold text-ink;
   }
@@ -130,6 +138,10 @@ textarea {
 
   .prose-mirai h3 {
     @apply mb-2 mt-4 text-base font-semibold text-ink;
+  }
+
+  .prose-mirai h4 {
+    @apply mb-2 mt-4 text-sm font-semibold text-ink;
   }
 
   .prose-mirai p {
@@ -144,12 +156,57 @@ textarea {
     @apply mb-3 list-decimal pl-5;
   }
 
+  .prose-mirai li {
+    @apply mb-1;
+  }
+
+  .prose-mirai li > ul,
+  .prose-mirai li > ol {
+    @apply mb-0 mt-1;
+  }
+
+  .prose-mirai blockquote {
+    @apply mb-3 border-l-2 border-primary-300 pl-3 text-ink-muted;
+  }
+
+  .prose-mirai a {
+    @apply font-medium text-primary-600 underline decoration-primary-200 underline-offset-2 hover:decoration-primary-500;
+  }
+
   .prose-mirai code {
     @apply rounded bg-surface-sunken px-1 py-0.5 font-mono text-[12px];
   }
 
   .prose-mirai pre {
     @apply mb-3 overflow-x-auto rounded-md border border-line bg-surface-sunken p-3 font-mono text-xs;
+  }
+
+  .prose-mirai pre code {
+    @apply border-0 bg-transparent p-0 text-xs;
+  }
+
+  .prose-mirai hr {
+    @apply my-5 border-line;
+  }
+
+  .prose-mirai table {
+    @apply mb-3 w-full border-collapse text-left text-xs;
+  }
+
+  .prose-mirai th {
+    @apply border border-line bg-surface-muted px-2.5 py-1.5 font-semibold text-ink;
+  }
+
+  .prose-mirai td {
+    @apply border border-line px-2.5 py-1.5 align-top;
+  }
+
+  .prose-mirai img {
+    @apply my-3 max-w-full rounded-md border border-line;
+  }
+
+  .prose-mirai input[type="checkbox"] {
+    @apply mr-1.5 accent-primary-500 align-middle;
   }
 }
 

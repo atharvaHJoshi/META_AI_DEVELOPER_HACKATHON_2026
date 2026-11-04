@@ -17,6 +17,14 @@ test.describe("Collaboration journeys", () => {
     await expect(selected).toBeVisible();
     await expect(selected).toHaveValue("");
     await selected.fill("# E2E release decision record\n\n## Decision\n\nRelease gate remains closed until evidence is accepted.");
+    const preview = page.getByTestId("markdown-preview");
+    await page.getByRole("tab", { name: "Preview" }).click();
+    await expect(preview.getByRole("heading", { name: "E2E release decision record" })).toBeVisible();
+    await expect(preview.getByText("Release gate remains closed until evidence is accepted.")).toBeVisible();
+    await page.getByRole("tab", { name: "Split" }).click();
+    await expect(page.getByLabel(/Markdown content/i)).toBeVisible();
+    await expect(preview.getByRole("heading", { name: "Decision", exact: true })).toBeVisible();
+    await page.getByRole("tab", { name: "Write" }).click();
     const saveButton = page.getByRole("button", { name: /Save/i });
     await expect(saveButton).toBeEnabled({ timeout: 10_000 });
     await saveButton.click();

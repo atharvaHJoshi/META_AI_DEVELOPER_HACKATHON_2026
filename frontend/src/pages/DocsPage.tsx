@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Document } from "@miraiwerk/schemas";
+import { MarkdownPreview } from "../components/MarkdownPreview";
 import { MermaidDiagram } from "../components/MermaidDiagram";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useToast } from "../context/ToastContext";
@@ -32,10 +33,16 @@ import {
   Modal,
   PageHeader,
   Select,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   Textarea,
 } from "../components/ui";
 
 const STATUSES = ["draft", "in_review", "published"];
+
+type DocEditorMode = "write" | "preview" | "split";
 
 type DocumentDraft = {
   documentId: string;
@@ -67,6 +74,7 @@ export function DocsPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [aiNotice, setAiNotice] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [docMode, setDocMode] = useState<DocEditorMode>("write");
 
   const documents = data?.documents ?? [];
   const selected = documents.find((document) => document.id === selectedId) ?? null;
@@ -108,6 +116,10 @@ export function DocsPage() {
     setSaveError(null);
     setAiNotice(null);
   }, [selected?.id, selected?.updatedAt]);
+
+  useEffect(() => {
+    setDocMode("write");
+  }, [selected?.id]);
 
   const select = (document: Document) => {
     if (document.id === selectedId) return;
@@ -326,41 +338,30 @@ export function DocsPage() {
                   </Field>
                 </div>
 
-                <div className={cn(draft.docType === "diagram" && "grid items-start gap-4 lg:grid-cols-2")}>
-                  <div className="min-w-0">
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <label htmlFor="doc-content" className="field-label mb-0">
-                        {draft.docType === "diagram" ? "Diagram source (Mermaid)" : "Markdown content"}
-                      </label>
-                      <span className="font-mono text-[10px] text-ink-faint">{draft.content.length.toLocaleString()} chars</span>
-                    </div>
-                    <Textarea
-                      id="doc-content"
-                      value={draft.content}
-                      onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
-                      className={cn(
-                        "font-mono text-xs leading-6",
-                        draft.docType === "diagram"
-                          ? "h-[60vh] min-h-[420px] resize-none bg-surface-muted"
-                          : "min-h-[420px]",
-                      )}
-                      placeholder={
-                        draft.docType === "diagram"
-                          ? "graph TD\n  ticket[Ticket] --> proposal[Decision proposal]\n  proposal --> ripple[RippleMap simulation]\n  ripple --> approval[Human approval]"
-                          : "# Context\n\n## Decision\n\n## Evidence\n\n## Consequences"
-                      }
-                      disabled={!canEdit}
-                      spellCheck={draft.docType === "markdown"}
-                    />
-                    {draft.docType === "diagram" && (
+                {draft.docType === "diagram" ? (
+                  <div className="grid items-start gap-4 lg:grid-cols-2">
+                    <div className="min-w-0">
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <label htmlFor="doc-content" className="field-label mb-0">
+                          Diagram source (Mermaid)
+                        </label>
+                        <span className="font-mono text-[10px] text-ink-faint">{draft.content.length.toLocaleString()} chars</span>
+                      </div>
+                      <Textarea
+                        id="doc-content"
+                        value={draft.content}
+                        onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
+                        className="h-[60vh] min-h-[420px] resize-none bg-surface-muted font-mono text-xs leading-6"
+                        placeholder={"graph TD\n  ticket[Ticket] --> proposal[Decision proposal]\n  proposal --> ripple[RippleMap simulation]\n  ripple --> approval[Human approval]"}
+                        disabled={!canEdit}
+                        spellCheck={false}
+                      />
                       <p className="mt-1.5 text-[10px] leading-5 text-ink-faint">
                         Mermaid syntax. Flowcharts, sequence, state, ER, class, gantt, journey, pie, mindmap, timeline and git
                         diagrams are supported. Rendering is local; source is saved with the document.
                       </p>
-                    )}
-                  </div>
+                    </div>
 
-                  {draft.docType === "diagram" && (
                     <div className="min-w-0">
                       <div className="mb-1.5 flex items-center justify-between gap-2">
                         <span className="field-label mb-0">Live preview</span>
@@ -368,8 +369,69 @@ export function DocsPage() {
                       </div>
                       <MermaidDiagram source={draft.content} className="h-[60vh]" />
                     </div>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <Tabs value={docMode} onValueChange={(value) => setDocMode(value as DocEditorMode)}>
+                    <TabsList>
+                      <TabsTrigger value="write">Write</TabsTrigger>
+                      <TabsTrigger value="preview">Preview</TabsTrigger>
+                      <TabsTrigger value="split">Split</TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="write">
+                      <div className="min-w-0">
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                          <label htmlFor="doc-content" className="field-label mb-0">Markdown content</label>
+                          <span className="font-mono text-[10px] text-ink-faint">{draft.content.length.toLocaleString()} chars</span>
+                        </div>
+                        <Textarea
+                          id="doc-content"
+                          value={draft.content}
+                          onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
+                          className="min-h-[420px] font-mono text-xs leading-6"
+                          placeholder={"# Context\n\n## Decision\n\n## Evidence\n\n## Consequences"}
+                          disabled={!canEdit}
+                          spellCheck
+                        />
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="preview">
+                      <div className="min-h-[420px] rounded-md border border-line bg-surface p-5">
+                        <MarkdownPreview content={draft.content} />
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="split">
+                      <div className="grid items-start gap-4 lg:grid-cols-2">
+                        <div className="min-w-0">
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <label htmlFor="doc-content" className="field-label mb-0">Markdown content</label>
+                            <span className="font-mono text-[10px] text-ink-faint">{draft.content.length.toLocaleString()} chars</span>
+                          </div>
+                          <Textarea
+                            id="doc-content"
+                            value={draft.content}
+                            onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
+                            className="h-[60vh] min-h-[420px] resize-none bg-surface-muted font-mono text-xs leading-6"
+                            placeholder={"# Context\n\n## Decision\n\n## Evidence\n\n## Consequences"}
+                            disabled={!canEdit}
+                            spellCheck
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <span className="field-label mb-0">Live preview</span>
+                            <span className="text-[10px] text-ink-faint">Markdown · rendered locally</span>
+                          </div>
+                          <div className="h-[60vh] min-h-[420px] overflow-auto rounded-md border border-line bg-surface p-5">
+                            <MarkdownPreview content={draft.content} />
+                          </div>
+                        </div>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                )}
 
                 {selected.projectId && (
                   <p className="text-[10px] text-ink-faint">
