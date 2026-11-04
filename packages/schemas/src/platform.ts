@@ -211,6 +211,25 @@ export const AiStatusSchema = z.object({
 });
 export type AiStatus = z.infer<typeof AiStatusSchema>;
 
+export const AiCitationSchema = z.object({
+  entityType: z.enum(["project", "requirement", "milestone", "task"]),
+  entityId: z.string(),
+  label: z.string(),
+  link: z.string(),
+});
+export type AiCitation = z.infer<typeof AiCitationSchema>;
+
+export const ProjectAnswerSchema = z.object({
+  answer: z.string(),
+  citations: z.array(AiCitationSchema).default([]),
+  provider: z.enum(["gemini", "meta", "deterministic-demo"]),
+  model: z.string(),
+  degraded: z.boolean(),
+  notice: z.string().nullable().default(null),
+  latencyMs: z.number(),
+});
+export type ProjectAnswer = z.infer<typeof ProjectAnswerSchema>;
+
 export const AppNotificationSchema = z.object({
   id: z.string(),
   workspaceId: z.string().nullable().default(null),

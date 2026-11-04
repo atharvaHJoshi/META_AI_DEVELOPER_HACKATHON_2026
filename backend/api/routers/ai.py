@@ -5,11 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query, Request
 
 from api.deps import current_user
-from api.schemas import DraftDocumentInput
+from api.schemas import DraftDocumentInput, ProjectQuestionInput
 from core.errors import ApiError
 from django.db import connection
 
-from services import assistant_service, authz
+from services import assistant_service, authz, project_qa
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
@@ -25,6 +25,15 @@ def draft_document(
     user: dict = Depends(current_user),
 ):
     return assistant_service.draft_document(user["id"], payload.workspaceId, payload.model_dump())
+
+
+@router.post("/projects/{project_id}/ask")
+def ask_project(
+    project_id: str,
+    payload: ProjectQuestionInput,
+    user: dict = Depends(current_user),
+):
+    return project_qa.answer_project_question(user["id"], project_id, payload.question)
 
 
 @router.get("/usage")

@@ -20,6 +20,7 @@ import type {
   NotificationPreference,
   NotificationPreferenceList,
   Organization,
+  ProjectAnswer,
   ProjectHistory,
   ProjectPlan,
   ProjectSummary,
@@ -254,6 +255,36 @@ export interface AiUsageRow {
   input_tokens: number | null;
   output_tokens: number | null;
   last_call: string;
+}
+
+export interface AiUsageBudget {
+  monthlyTokenBudget: number;
+  monthlyCostBudgetUsd: number;
+  tokensUsed: number;
+  estimatedCostUsd: number;
+  tokensRemaining: number | null;
+  costRemainingUsd: number | null;
+  tokenUtilization: number | null;
+  costUtilization: number | null;
+  exceeded: boolean;
+  enforced: boolean;
+}
+
+export interface AiUsageResponse {
+  usage: AiUsageRow[];
+  period: { start: string; end: string };
+  totals: {
+    calls: number;
+    degraded: number;
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+  };
+  budget: AiUsageBudget;
+  pricing: {
+    inputPerMillionUsd: number;
+    outputPerMillionUsd: number;
+  };
 }
 
 export interface MeResponse {
@@ -492,7 +523,9 @@ export const api = {
         metaConfigured: boolean;
       }>("/ai/status"),
     usage: (workspaceId: string) =>
-      request<{ usage: AiUsageRow[] }>(`/ai/usage${queryString({ workspaceId })}`),
+      request<AiUsageResponse>(`/ai/usage${queryString({ workspaceId })}`),
+    askProject: (projectId: string, question: string) =>
+      post<ProjectAnswer>(`/ai/projects/${projectId}/ask`, { question }),
   },
 
   notifications: {

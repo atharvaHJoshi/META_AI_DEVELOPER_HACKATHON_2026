@@ -19,6 +19,7 @@
     "test:frontend": "npm run test -w @miraiwerk/frontend",
     "test:e2e": "playwright test",
     "test:all": "npm run test && npm run test:e2e",
+    "evaluate": "cd backend && ../.venv/bin/python -m aiml.evaluate",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "db:migrate": "cd backend && ../.venv/bin/python manage.py migrate",

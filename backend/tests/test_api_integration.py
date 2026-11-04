@@ -575,6 +575,45 @@ def test_defer_records_audited_decision_without_versioning() -> None:
     assert plan.json()["version"] == 3
 
 
+def test_project_question_is_grounded_and_labelled() -> None:
+    response = client.post(
+        f"/api/ai/projects/{state['project_id']}/ask",
+        headers=as_user(OWNER),
+        json={"question": "What is blocked and what should I focus on next?"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "deterministic-demo"
+    assert body["model"] == "miraiwerk-rules-v1"
+    assert body["degraded"] is True
+    assert "labelled deterministic" in body["answer"].lower()
+    assert body["citations"]
+    assert any(item["entityType"] == "project" for item in body["citations"])
+    assert any(item["entityType"] == "task" for item in body["citations"])
+
+    viewer = client.post(
+        f"/api/ai/projects/{state['project_id']}/ask",
+        headers=as_user(VIEWER),
+        json={"question": "Which milestones are next?"},
+    )
+    assert viewer.status_code == 200
+    assert viewer.json()["answer"]
+
+    outsider = client.post(
+        f"/api/ai/projects/{state['project_id']}/ask",
+        headers=as_user(f"usr_missing_{PREFIX}"),
+        json={"question": "What is blocked?"},
+    )
+    assert outsider.status_code == 401
+
+    invalid = client.post(
+        f"/api/ai/projects/{state['project_id']}/ask",
+        headers=as_user(OWNER),
+        json={"question": "x"},
+    )
+    assert invalid.status_code == 422
+
+
 def test_malformed_ticket_input_returns_422() -> None:
     response = client.post(
         "/api/tickets",
