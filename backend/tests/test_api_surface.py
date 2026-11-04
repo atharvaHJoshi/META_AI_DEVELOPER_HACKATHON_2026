@@ -31,6 +31,7 @@ import django  # noqa: E402
 django.setup()
 
 import pytest  # noqa: E402
+from django.db import connection  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from miraiwerk.asgi import application  # noqa: E402
@@ -89,15 +90,25 @@ def _cleanup() -> None:
             "id", flat=True
         )
     )
-    models.AiCall.objects.filter(workspace_id__in=state["workspaceIds"]).delete()
-    models.AiCall.objects.filter(project_id__in=project_ids).delete()
-    models.Project.objects.filter(id__in=project_ids).delete()
-    models.Workspace.objects.filter(id__in=state["workspaceIds"]).delete()
-    models.Organization.objects.filter(id__in=state["orgIds"]).delete()
-    models.SecurityAudit.objects.filter(user_id__in=[
-        state["ownerId"], state["memberId"], state["viewerId"]
-    ]).delete()
-    models.User.objects.filter(email__in=TEST_EMAILS).delete()
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT set_config('miraiwerk.audit_maintenance', 'on', false)")
+    try:
+        models.AiCall.objects.filter(workspace_id__in=state["workspaceIds"]).delete()
+        models.AiCall.objects.filter(project_id__in=project_ids).delete()
+        models.Notification.objects.filter(workspace_id__in=state["workspaceIds"]).delete()
+        models.NotificationPreference.objects.filter(
+            user_id__in=[state["ownerId"], state["memberId"], state["viewerId"]]
+        ).delete()
+        models.Project.objects.filter(id__in=project_ids).delete()
+        models.Workspace.objects.filter(id__in=state["workspaceIds"]).delete()
+        models.Organization.objects.filter(id__in=state["orgIds"]).delete()
+        models.SecurityAudit.objects.filter(user_id__in=[
+            state["ownerId"], state["memberId"], state["viewerId"]
+        ]).delete()
+        models.User.objects.filter(email__in=TEST_EMAILS).delete()
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT set_config('miraiwerk.audit_maintenance', 'off', false)")
 
 
 @pytest.fixture(scope="module", autouse=True)

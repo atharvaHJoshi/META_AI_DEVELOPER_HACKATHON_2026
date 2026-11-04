@@ -48,13 +48,15 @@ GEMINI_API_KEY=
 MODEL_API_KEY=
 ```
 
-Before deploying anywhere, replace the placeholder `JWT_SECRET` in both env files:
+Before deploying anywhere, replace the placeholder `JWT_SECRET` and set a distinct `DJANGO_SECRET_KEY`:
 
 ```bash
 openssl rand -hex 32
 ```
 
 > Never put a Gemini or Meta key in a `VITE_*` variable or in frontend code. Keys are read only by the API process.
+
+Development defaults to Django's console email backend, so password-reset and notification emails print to the API log and the forgot-password response includes a `devToken`. Configure `EMAIL_*` in both env files to send real mail; see §11.
 
 ## 4. Start PostgreSQL
 
@@ -82,7 +84,9 @@ docker exec miraiwerk-db pg_isready -U miraiwerk -d miraiwerk
 npm run db:migrate
 ```
 
-Migrations are Django migrations in `backend/platform_app/migrations/` (`0001_initial`, the database-defaults migration, and the `parent_version_id` column rename). Apply them with `python manage.py migrate`; create new ones with `python manage.py makemigrations` after editing `platform_app/models.py`.
+Migrations are Django migrations in `backend/platform_app/migrations/`: the initial schema, database defaults, the `parent_version_id` relationship, `0004_security_notifications` (rate limits, notifications, preferences, email delivery, audit request IDs) and `0005_append_only_audit` (PostgreSQL triggers). Apply them with `python manage.py migrate`; create new ones with `python manage.py makemigrations` after editing `platform_app/models.py`.
+
+The append-only triggers block `UPDATE` and `DELETE` on `security_audit`, `audit_events` and `decision_audit`. Test cleanup and destructive local reseeds opt out for the current database session with `SELECT set_config('miraiwerk.audit_maintenance', 'on', false);`. Production jobs must never set that flag.
 
 ## 6. Seed the demo
 
@@ -138,7 +142,7 @@ A healthy response looks like:
 }
 ```
 
-The `ai` value is `gemini` or `meta` when that provider is configured, and `deterministic-demo` when no key is present.
+The `ai` value is `gemini` when the Gemini provider is configured and `deterministic-demo` when no provider key is present. Selecting `AI_PROVIDER=meta` also yields the labelled deterministic fallback in this build, because the Meta adapter is not implemented in Python.
 
 ## 8. Sign in
 
@@ -158,13 +162,15 @@ Sessions use a short-lived bearer access token plus a rotating refresh token in 
 ## 9. Verify the installation
 
 ```bash
-npm test
+RATE_LIMIT_ENABLED=false npm run test:backend
 npm run test:frontend
 npm run test:e2e
 npm run build
 ```
 
-The backend pytest suite needs PostgreSQL running and migrated. It creates its own users and project, then deletes both. The E2E suite starts its own backend and frontend on the standard ports; stop `npm run dev` first if it is still running.
+The backend pytest suite needs PostgreSQL running and migrated. It creates its own users and project, then deletes both. `RATE_LIMIT_ENABLED=false` keeps repeated local runs from exhausting the login window; the dedicated security tests exercise the limiter directly with monkeypatched settings. The normal backend test count is **55** and the frontend count is **14**. The E2E suite starts its own backend and frontend on the standard ports; stop `npm run dev` first if it is still running.
+
+The full E2E run is **16 tests** (15 journeys plus one authenticated setup). Playwright signs in once and reuses `storageState`; unauthenticated access tests explicitly opt out. The RippleMap journey creates its own ticket and pending decision through the API, so it does not depend on leftover seed state.
 
 Playwright uses `/opt/google/chrome/chrome` by default. Override it with `PLAYWRIGHT_CHROMIUM_PATH` if Chrome lives elsewhere.
 
@@ -204,12 +210,68 @@ Restart the API process, then check:
 curl -s http://localhost:4000/api/health
 ```
 
-The `ai` field should report `gemini` or `meta`. New plan drafts and ticket proposals will record the matching provider and model name.
+The `ai` field should report `gemini` when a Gemini key is configured and `deterministic-demo` otherwise. Selecting `AI_PROVIDER=meta` produces the labelled deterministic fallback; Meta is never claimed as output. New plan drafts and ticket proposals will record the matching provider and model name.
 
 If the model call fails:
 
 - With `AI_FALLBACK_ON_ERROR=true`, the response uses deterministic rules and is marked `degraded` with a notice.
 - With `AI_FALLBACK_ON_ERROR=false`, analysis fails visibly; the ticket is retained with `analysis_failed` and no proposal.
+
+## 11. Production configuration
+
+Set `APP_ENV=production` on the API process. Startup then validates configuration and refuses to boot if any of the following is wrong:
+
+| Requirement | Variable |
+| --- | --- |
+| Strong, non-default secrets | `JWT_SECRET`, `DJANGO_SECRET_KEY` (32+ chars) |
+| Explicit hosts | `ALLOWED_HOSTS` (no `*`) |
+| CORS origins | `FRONTEND_ORIGINS` or `WEB_ORIGIN` |
+| Secure cookies | `COOKIE_SECURE=true` |
+| HTTPS | `SECURE_SSL_REDIRECT=true` |
+| Real email backend | `EMAIL_BACKEND` not Django's console backend |
+| No demo sign-in | `AUTH_ALLOW_DEMO=false` |
+
+A representative production block:
+
+```dotenv
+APP_ENV=production
+DJANGO_SECRET_KEY=<64+ random characters>
+JWT_SECRET=<64+ random characters>
+ALLOWED_HOSTS=app.example.com
+FRONTEND_ORIGINS=https://app.example.com
+CSRF_TRUSTED_ORIGINS=https://app.example.com
+COOKIE_SECURE=true
+SECURE_SSL_REDIRECT=true
+SECURE_HSTS_SECONDS=31536000
+TRUST_X_FORWARDED_PROTO=true
+AUTH_ALLOW_DEMO=false
+
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.example.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=...
+EMAIL_HOST_PASSWORD=...
+EMAIL_USE_TLS=true
+DEFAULT_FROM_EMAIL=MIRAIWERK AI <no-reply@example.com>
+```
+
+If a reverse proxy terminates TLS, set `TRUST_X_FORWARDED_PROTO=true` and forward `X-Forwarded-Proto`. In production the API also applies trusted-host checks, CSP, HSTS, frame denial, referrer and permissions policies, and returns `x-request-id` on every response.
+
+Rate limits are PostgreSQL-backed fixed windows shared by every API process. Defaults are five failed login attempts per account and thirty per IP per minute, five registrations per IP, three password resets per account, 120 refreshes per IP, and 100 AI calls per user / 500 per workspace per day. Override them with `RATE_LIMIT_*`; a throttled response is `429 RATE_LIMITED` with `retryAfter`.
+
+## 12. Notifications and email
+
+Notifications are created by backend events. The in-app bell and preference switches are available without extra configuration.
+
+To create due-soon, overdue and milestone reminders, run once a day from cron, systemd or a scheduler:
+
+```bash
+cd backend && ../.venv/bin/python manage.py notify_reminders
+```
+
+The command is idempotent per day through notification dedupe keys, so a retry does not duplicate messages. Notification emails respect each user's category preferences; security notifications are always on. Delivery attempts are recorded in the `email_deliveries` table and can be inspected in the Django admin.
+
+Development without SMTP prints messages to the API log and returns `devToken` from `POST /api/auth/password/forgot`. Production never returns the token.
 
 ## Troubleshooting
 
@@ -260,7 +322,19 @@ The selected option has no stored scenario or the stored scenario no longer matc
 
 ### `400 WORKSPACE_REQUIRED`
 
-Workspace-scoped endpoints (decisions, documents, meetings, threads, teams, workload, audit) need an `x-workspace-id` header. The browser sends it automatically after bootstrap; scripted calls must include it.
+Workspace-scoped endpoints (decisions, documents, meetings, threads, notifications, notification preferences, teams, workload, audit) need an `x-workspace-id` header. The browser sends it automatically after bootstrap; scripted calls must include it.
+
+### `429 RATE_LIMITED`
+
+The endpoint hit a shared PostgreSQL-backed fixed window. The response includes `retryAfter` (seconds) and an `error.details` scope. Wait for the window to reset, or tune `RATE_LIMIT_LOGIN_ACCOUNT`, `RATE_LIMIT_LOGIN_IP`, `RATE_LIMIT_AI_USER_DAILY` and related variables. For repeated local test runs, set `RATE_LIMIT_ENABLED=false`.
+
+### Password-reset email does not arrive
+
+Development uses Django's console backend by default: look for the message in the API log and use `devToken` from the response. To send real mail, set `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` and `EMAIL_USE_TLS`. Inspect `email_deliveries` for the attempt and error. Production refuses to start with the console backend.
+
+### Notifications are missing
+
+Check the user's notification preferences (security is always on; other categories can be muted), confirm the recipient is a project or workspace member, and remember that `notify_reminders` must be scheduled separately. Dedupe keys suppress repeat events for the same entity and day.
 
 ### Web cannot reach the API
 

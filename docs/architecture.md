@@ -265,13 +265,7 @@ The provider adapter exposes two workflows:
 
 Both return structured results with `provider`, `model`, `degraded`, `notice`, `latencyMs`, and usage metadata. The API records every call in `ai_calls`, including failures and fallbacks.
 
-Both a Gemini adapter and a Meta adapter are available; `AI_PROVIDER` selects the active one. Meta requests use:
-
-- OpenAI-compatible `POST /chat/completions`
-- JSON-schema response formats
-- bounded retries with exponential backoff
-- request timeouts
-- an optional read-only tool loop (project snapshot, requirements, tasks, milestones, related tickets)
+The Python build ships a **Gemini adapter** and the labelled deterministic implementation. The original TypeScript Meta adapter is preserved in git history but has not been ported to Python; selecting `AI_PROVIDER=meta` returns the labelled deterministic fallback rather than pretending a Meta model ran.
 
 Gemini requests use the Google Generative Language API with the same structured-output contract, bounded retries and timeouts. The deterministic implementation provides identical contracts without a network call. It is explicitly labelled in the UI, API metadata and proposal records. A provider failure with fallback enabled becomes a deterministic proposal marked `degraded`, never a silent success.
 

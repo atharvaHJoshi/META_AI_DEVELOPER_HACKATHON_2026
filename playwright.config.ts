@@ -26,7 +26,15 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
+    },
+    {
       name: "chromium",
+      use: {
+        storageState: "e2e/.auth/maya.json",
+      },
+      dependencies: ["setup"],
     },
   ],
   webServer: [

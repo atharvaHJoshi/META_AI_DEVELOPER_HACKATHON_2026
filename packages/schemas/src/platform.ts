@@ -210,3 +210,38 @@ export const AiStatusSchema = z.object({
   metaConfigured: z.boolean(),
 });
 export type AiStatus = z.infer<typeof AiStatusSchema>;
+
+export const AppNotificationSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string().nullable().default(null),
+  projectId: z.string().nullable().default(null),
+  type: z.string(),
+  title: z.string(),
+  message: z.string().default(""),
+  entityType: z.string().default(""),
+  entityId: z.string().default(""),
+  link: z.string().default(""),
+  isRead: z.boolean().default(false),
+  createdAt: z.string(),
+});
+export type AppNotification = z.infer<typeof AppNotificationSchema>;
+
+export const NotificationFeedSchema = z.object({
+  notifications: z.array(AppNotificationSchema),
+  unreadCount: z.number().default(0),
+  hasMore: z.boolean().default(false),
+});
+export type NotificationFeed = z.infer<typeof NotificationFeedSchema>;
+
+export const NotificationPreferenceSchema = z.object({
+  category: z.string(),
+  inApp: z.boolean().default(true),
+  email: z.boolean().default(true),
+  locked: z.boolean().default(false),
+});
+export type NotificationPreference = z.infer<typeof NotificationPreferenceSchema>;
+
+export const NotificationPreferenceListSchema = z.object({
+  preferences: z.array(NotificationPreferenceSchema),
+});
+export type NotificationPreferenceList = z.infer<typeof NotificationPreferenceListSchema>;

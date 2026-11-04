@@ -8,6 +8,15 @@ from __future__ import annotations
 
 import os
 
+from core.env import (
+    DEV_JWT_SECRET,
+    get_bool,
+    get_int,
+    get_list,
+    is_production,
+    secret,
+    validate_production_config,
+)
 from miraiwerk import settings as django_settings
 
 
@@ -31,21 +40,47 @@ _BASE_DIR = django_settings.BASE_DIR
 # Django settings loads the first available .env (backend/.env then repo root).
 _env_loaded = True
 
-NODE_ENV = os.environ.get("NODE_ENV", "development")
-IS_PRODUCTION = NODE_ENV.lower() == "production"
+NODE_ENV = os.environ.get("APP_ENV", os.environ.get("NODE_ENV", "development"))
+IS_PRODUCTION = is_production()
 PORT = _int(os.environ.get("PORT"), 4000)
 WEB_ORIGIN = os.environ.get("WEB_ORIGIN", "http://localhost:5173")
-FRONTEND_ORIGINS = list(
-    dict.fromkeys([WEB_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"])
-)
 
-JWT_SECRET = os.environ.get(
-    "JWT_SECRET", "miraiwerk-dev-only-secret-change-me-before-production"
-)
+_configured_origins = get_list("FRONTEND_ORIGINS")
+if _configured_origins:
+    FRONTEND_ORIGINS = list(dict.fromkeys(_configured_origins))
+elif IS_PRODUCTION:
+    FRONTEND_ORIGINS = list(dict.fromkeys([WEB_ORIGIN]))
+else:
+    FRONTEND_ORIGINS = list(
+        dict.fromkeys(
+            [WEB_ORIGIN, "http://localhost:5173", "http://127.0.0.1:5173"]
+        )
+    )
+
+JWT_SECRET = secret("JWT_SECRET", DEV_JWT_SECRET)
 ACCESS_TOKEN_TTL_SECONDS = _int(os.environ.get("ACCESS_TOKEN_TTL_SECONDS"), 900)
 REFRESH_TOKEN_DAYS = _int(os.environ.get("REFRESH_TOKEN_DAYS"), 30)
-AUTH_ALLOW_DEMO = _bool(os.environ.get("AUTH_ALLOW_DEMO"), True)
-COOKIE_SECURE = _bool(os.environ.get("COOKIE_SECURE"), False)
+AUTH_ALLOW_DEMO = _bool(os.environ.get("AUTH_ALLOW_DEMO"), not IS_PRODUCTION)
+COOKIE_SECURE = get_bool("COOKIE_SECURE", IS_PRODUCTION)
+
+# ---------------------------------------------------------------------------
+# Abuse controls. These are fixed-window limits stored in PostgreSQL so they
+# are shared by every API process. Values are intentionally conservative for
+# production and overridable for local testing.
+# ---------------------------------------------------------------------------
+RATE_LIMIT_ENABLED = get_bool("RATE_LIMIT_ENABLED", True)
+RATE_LIMIT_LOGIN_ACCOUNT = _int(os.environ.get("RATE_LIMIT_LOGIN_ACCOUNT"), 5)
+RATE_LIMIT_LOGIN_IP = _int(os.environ.get("RATE_LIMIT_LOGIN_IP"), 30)
+RATE_LIMIT_REGISTER_IP = _int(os.environ.get("RATE_LIMIT_REGISTER_IP"), 5)
+RATE_LIMIT_PASSWORD_RESET_ACCOUNT = _int(
+    os.environ.get("RATE_LIMIT_PASSWORD_RESET_ACCOUNT"), 3
+)
+RATE_LIMIT_PASSWORD_RESET_IP = _int(os.environ.get("RATE_LIMIT_PASSWORD_RESET_IP"), 10)
+RATE_LIMIT_REFRESH_IP = _int(os.environ.get("RATE_LIMIT_REFRESH_IP"), 120)
+RATE_LIMIT_AI_USER_DAILY = _int(os.environ.get("RATE_LIMIT_AI_USER_DAILY"), 100)
+RATE_LIMIT_AI_WORKSPACE_DAILY = _int(
+    os.environ.get("RATE_LIMIT_AI_WORKSPACE_DAILY"), 500
+)
 
 AI_PROVIDER = (os.environ.get("AI_PROVIDER") or "auto").lower()
 AI_FALLBACK_ON_ERROR = _bool(os.environ.get("AI_FALLBACK_ON_ERROR"), True)

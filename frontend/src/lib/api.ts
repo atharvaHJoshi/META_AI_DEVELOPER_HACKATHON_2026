@@ -16,6 +16,9 @@ import type {
   GeneratedPlan,
   Meeting,
   MeetingActionItem,
+  NotificationFeed,
+  NotificationPreference,
+  NotificationPreferenceList,
   Organization,
   ProjectHistory,
   ProjectPlan,
@@ -297,6 +300,18 @@ export const api = {
         {},
         { skipAuth: true },
       ),
+    forgotPassword: (email: string) =>
+      post<{ ok: boolean; message: string; devToken: string | null }>(
+        "/auth/password/forgot",
+        { email },
+        { skipAuth: true },
+      ),
+    resetPassword: (token: string, password: string) =>
+      post<{ ok: boolean }>(
+        "/auth/password/reset",
+        { token, password },
+        { skipAuth: true },
+      ),
   },
 
   bootstrap: () => request<AppBootstrap>("/bootstrap"),
@@ -478,6 +493,26 @@ export const api = {
       }>("/ai/status"),
     usage: (workspaceId: string) =>
       request<{ usage: AiUsageRow[] }>(`/ai/usage${queryString({ workspaceId })}`),
+  },
+
+  notifications: {
+    list: (input: { status?: "all" | "unread"; limit?: number; offset?: number } = {}) =>
+      request<NotificationFeed>(
+        `/notifications${queryString({
+          status: input.status ?? "all",
+          limit: String(input.limit ?? 20),
+          offset: String(input.offset ?? 0),
+        })}`,
+      ),
+    unreadCount: () =>
+      request<{ unreadCount: number }>("/notifications/unread-count"),
+    markRead: (notificationId: string) =>
+      post<{ ok: boolean }>(`/notifications/${notificationId}/read`, {}),
+    markAllRead: () => post<{ ok: boolean; updated: number }>("/notifications/read-all", {}),
+    preferences: () =>
+      request<NotificationPreferenceList>("/notification-preferences"),
+    updatePreferences: (preferences: Array<Pick<NotificationPreference, "category" | "inApp" | "email">>) =>
+      patch<NotificationPreferenceList>("/notification-preferences", { preferences }),
   },
 
   health: () =>

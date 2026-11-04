@@ -36,12 +36,15 @@ def change_for_proposal_option(proposal: dict, option: str) -> dict:
         change = changes.get("accept")
         if not change:
             raise ApiError(422, "ACCEPT_NOT_AVAILABLE", "This proposal does not contain an accept option.")
-        return change
+        # The requested option is authoritative. Model output or legacy rows can
+        # carry a mismatched label, which would otherwise produce a scenario
+        # that can never be approved for the option the user selected.
+        return {**change, "option": option}
     if option == "split":
         change = changes.get("split")
         if not change:
             raise ApiError(422, "SPLIT_NOT_AVAILABLE", "This proposal does not contain a split option.")
-        return change
+        return {**change, "option": option}
     return empty_option_change(option)
 
 

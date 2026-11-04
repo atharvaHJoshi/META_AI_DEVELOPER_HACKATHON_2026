@@ -31,10 +31,13 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import type { NotificationFeed } from "@miraiwerk/schemas";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
-import { cn, hasRole, initials, roleLabel } from "../lib/format";
-import { Avatar, Badge, IconButton, LoadingBlock, Modal, Tooltip } from "./ui";
+import { api } from "../lib/api";
+import { cn, hasRole, initials, relativeTime, roleLabel } from "../lib/format";
+import { useAsync } from "../lib/useAsync";
+import { Avatar, Badge, IconButton, LoadingBlock, Modal, Spinner, Tooltip } from "./ui";
 
 type NavItem = {
   label: string;
@@ -344,21 +347,80 @@ function GlobalSearch({ open, onOpenChange }: { open: boolean; onOpenChange: (op
 }
 
 function NotificationMenu() {
-  const { ticketCounts } = useWorkspace();
+  const { activeWorkspace } = useWorkspace();
   const navigate = useNavigate();
-  const count = ticketCounts.pendingDecisions + ticketCounts.open;
+  const workspaceId = activeWorkspace?.id ?? "";
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"unread" | "all">("unread");
+  const [limit, setLimit] = useState(8);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const feed = useAsync<NotificationFeed>(
+    () =>
+      workspaceId
+        ? api.notifications.list({ status: tab, limit })
+        : Promise.resolve({ notifications: [], unreadCount: 0, hasMore: false }),
+    [workspaceId, tab, limit],
+  );
+
+  useEffect(() => {
+    if (open) void feed.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const unread = feed.data?.unreadCount ?? 0;
+  const notifications = feed.data?.notifications ?? [];
+
+  const selectTab = (next: "unread" | "all") => {
+    if (next !== tab) {
+      setTab(next);
+      setLimit(8);
+    }
+  };
+
+  const openNotification = async (notificationId: string, link: string, isRead: boolean) => {
+    setActionError(null);
+    if (!isRead) {
+      setActionBusy(notificationId);
+      try {
+        await api.notifications.markRead(notificationId);
+        await feed.reload();
+      } catch {
+        setActionError("This notification could not be marked as read.");
+      } finally {
+        setActionBusy(null);
+      }
+    }
+    setOpen(false);
+    if (link.startsWith("/")) navigate(link);
+  };
+
+  const markAllRead = async () => {
+    setActionBusy("all");
+    setActionError(null);
+    try {
+      await api.notifications.markAllRead();
+      await feed.reload();
+    } catch {
+      setActionError("Notifications could not be marked as read.");
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
   return (
-    <DropdownMenu.Root>
+    <DropdownMenu.Root open={open} onOpenChange={setOpen}>
       <DropdownMenu.Trigger asChild>
         <button
           type="button"
           className="relative inline-flex h-9 w-9 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-300"
-          aria-label={`Notifications${count ? `, ${count} open items` : ""}`}
+          aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
         >
           <Bell className="h-4 w-4" />
-          {count > 0 && (
+          {unread > 0 && (
             <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-500 px-1 text-[9px] font-bold text-white">
-              {count > 9 ? "9+" : count}
+              {unread > 9 ? "9+" : unread}
             </span>
           )}
         </button>
@@ -367,37 +429,132 @@ function NotificationMenu() {
         <DropdownMenu.Content
           align="end"
           sideOffset={6}
-          className="z-[65] w-80 rounded-lg border border-line bg-surface p-1.5 shadow-popover animate-slide-up"
+          className="z-[65] w-[22rem] rounded-lg border border-line bg-surface p-1.5 shadow-popover animate-slide-up"
         >
-          <p className="px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-faint">
-            Needs attention
-          </p>
-          <DropdownMenu.Item
-            onSelect={() => navigate("/ripplemap")}
-            className="flex cursor-pointer items-start justify-between gap-3 rounded-md px-2.5 py-2.5 outline-none hover:bg-surface-sunken focus:bg-surface-sunken"
-          >
-            <span>
-              <span className="block text-xs font-semibold text-ink">Pending decisions</span>
-              <span className="block text-[11px] text-ink-muted">Review RippleMap impact before approval.</span>
-            </span>
-            <Badge tone="amber">{ticketCounts.pendingDecisions}</Badge>
-          </DropdownMenu.Item>
-          <DropdownMenu.Item
-            onSelect={() => navigate("/tickets")}
-            className="flex cursor-pointer items-start justify-between gap-3 rounded-md px-2.5 py-2.5 outline-none hover:bg-surface-sunken focus:bg-surface-sunken"
-          >
-            <span>
-              <span className="block text-xs font-semibold text-ink">Open tickets</span>
-              <span className="block text-[11px] text-ink-muted">Triage new intake and missing evidence.</span>
-            </span>
-            <Badge tone="primary">{ticketCounts.open}</Badge>
-          </DropdownMenu.Item>
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+            <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-faint">
+              Notifications
+            </p>
+            {unread > 0 && (
+              <button
+                type="button"
+                onClick={() => void markAllRead()}
+                disabled={actionBusy === "all"}
+                className="text-[10px] font-semibold text-primary-600 hover:underline disabled:opacity-60"
+              >
+                {actionBusy === "all" ? "Marking…" : "Mark all read"}
+              </button>
+            )}
+          </div>
+
+          <div className="mb-1 flex gap-1 rounded-md bg-surface-muted p-1">
+            <DropdownMenu.Item
+              onSelect={(event) => {
+                event.preventDefault();
+                selectTab("unread");
+              }}
+              className={cn(
+                "flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded px-2 py-1 text-[11px] font-semibold outline-none",
+                tab === "unread" ? "bg-surface text-ink shadow-sm" : "text-ink-muted hover:text-ink",
+              )}
+            >
+              Unread
+              {unread > 0 && <Badge tone="primary">{unread}</Badge>}
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              onSelect={(event) => {
+                event.preventDefault();
+                selectTab("all");
+              }}
+              className={cn(
+                "flex flex-1 cursor-pointer items-center justify-center rounded px-2 py-1 text-[11px] font-semibold outline-none",
+                tab === "all" ? "bg-surface text-ink shadow-sm" : "text-ink-muted hover:text-ink",
+              )}
+            >
+              All
+            </DropdownMenu.Item>
+          </div>
+
+          {actionError && (
+            <p className="mx-2 mb-1 rounded bg-danger-50 px-2 py-1.5 text-[10px] text-danger-600" role="alert">
+              {actionError}
+            </p>
+          )}
+
+          <div className="max-h-[22rem] overflow-y-auto">
+            {feed.loading ? (
+              <div className="py-6"><LoadingBlock label="Loading notifications" /></div>
+            ) : feed.error ? (
+              <p className="px-3 py-6 text-center text-xs text-danger-600">{feed.error}</p>
+            ) : notifications.length === 0 ? (
+              <div className="px-3 py-7 text-center">
+                <Bell className="mx-auto h-5 w-5 text-ink-faint" />
+                <p className="mt-2 text-xs font-semibold text-ink">
+                  {tab === "unread" ? "You are all caught up" : "No notifications yet"}
+                </p>
+                <p className="mt-0.5 text-[10px] text-ink-faint">
+                  Task, decision, meeting and mention updates appear here.
+                </p>
+              </div>
+            ) : (
+              notifications.map((notification) => (
+                <DropdownMenu.Item
+                  key={notification.id}
+                  onSelect={() =>
+                    void openNotification(
+                      notification.id,
+                      notification.link,
+                      notification.isRead,
+                    )
+                  }
+                  className={cn(
+                    "flex cursor-pointer items-start gap-2.5 rounded-md px-2.5 py-2.5 outline-none hover:bg-surface-sunken focus:bg-surface-sunken",
+                    notification.isRead && "opacity-70",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                      notification.isRead ? "bg-line-strong" : "bg-primary-500",
+                    )}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-semibold text-ink">{notification.title}</span>
+                      {actionBusy === notification.id && <Spinner className="h-3 w-3 shrink-0" />}
+                    </span>
+                    {notification.message && (
+                      <span className="mt-0.5 block line-clamp-2 text-[11px] leading-5 text-ink-muted">
+                        {notification.message}
+                      </span>
+                    )}
+                    <span className="mt-1 block font-mono text-[9px] uppercase tracking-[0.08em] text-ink-faint">
+                      {relativeTime(notification.createdAt)}
+                    </span>
+                  </span>
+                </DropdownMenu.Item>
+              ))
+            )}
+          </div>
+
+          {feed.data?.hasMore && (
+            <DropdownMenu.Item
+              onSelect={(event) => {
+                event.preventDefault();
+                setLimit((current) => current + 8);
+              }}
+              className="mt-1 cursor-pointer rounded-md border-t border-line px-2.5 py-2 text-center text-[11px] font-semibold text-primary-600 outline-none hover:bg-surface-sunken focus:bg-surface-sunken"
+            >
+              Load more
+            </DropdownMenu.Item>
+          )}
           <DropdownMenu.Separator className="my-1 h-px bg-line" />
           <DropdownMenu.Item
-            onSelect={() => navigate("/ripplemap")}
-            className="cursor-pointer rounded-md px-2.5 py-2 text-xs font-medium text-primary-600 outline-none hover:bg-surface-sunken focus:bg-surface-sunken"
+            onSelect={() => navigate("/settings")}
+            className="cursor-pointer rounded-md px-2.5 py-2 text-center text-[11px] font-medium text-ink-muted outline-none hover:bg-surface-sunken focus:bg-surface-sunken"
           >
-            Review pending decisions
+            Notification preferences
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

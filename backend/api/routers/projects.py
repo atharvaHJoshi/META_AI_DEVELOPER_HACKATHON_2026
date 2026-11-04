@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Request
 from api.deps import current_user, workspace_id
 from api.schemas import CreateProjectInput, GeneratePlanInput
 from core.errors import ApiError
-from services import plan_service, project_service
+from services import authz, plan_service, project_service, rate_limit
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -18,8 +18,21 @@ def list_projects(request: Request, user: dict = Depends(current_user)):
 
 
 @router.post("/generate-plan")
-def generate_plan(payload: GeneratePlanInput):
-    return plan_service.generate_plan(payload.model_dump(), None)
+def generate_plan(
+    payload: GeneratePlanInput,
+    request: Request,
+    user: dict = Depends(current_user),
+):
+    workspace = workspace_id(request)
+    if workspace:
+        authz.assert_workspace_access(user["id"], workspace)
+    rate_limit.enforce_ai(user["id"], workspace, "plan_generation")
+    return plan_service.generate_plan(
+        payload.model_dump(),
+        None,
+        user_id=user["id"],
+        workspace_id=workspace,
+    )
 
 
 @router.post("", status_code=201)

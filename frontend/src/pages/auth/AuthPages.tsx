@@ -223,6 +223,14 @@ export function LoginPage() {
               required
             />
           </Field>
+          <div className="-mt-1 text-right">
+            <Link
+              to="/forgot-password"
+              className="text-[11px] font-semibold text-primary-600 hover:underline"
+            >
+              Forgot password?
+            </Link>
+          </div>
           {error && (
             <Alert tone="danger" title="Could not sign in">
               {error}
@@ -279,9 +287,10 @@ export function LoginPage() {
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [form, setForm] = useState({
     fullName: "",
-    email: "",
+    email: params.get("email") ?? "",
     organizationName: "",
     password: "",
     confirm: "",
@@ -404,6 +413,205 @@ export function RegisterPage() {
             Sign in
           </Link>
         </p>
+      </div>
+    </AuthLayout>
+  );
+}
+
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [devToken, setDevToken] = useState<string | null>(null);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    setDevToken(null);
+    try {
+      const result = await api.auth.forgotPassword(email.trim());
+      setMessage(result.message);
+      setDevToken(result.devToken ?? null);
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError ? cause.message : "The reset request could not be sent.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AuthLayout>
+      <div className="rounded-xl border border-line bg-surface p-6 shadow-card sm:p-8">
+        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary-600">Account recovery</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">Reset your password</h1>
+        <p className="mt-1.5 text-sm leading-6 text-ink-muted">
+          Enter the email address on your account. If it exists, we will send a single-use reset link
+          that expires in 30 minutes.
+        </p>
+
+        <form className="mt-6 space-y-4" onSubmit={submit}>
+          <Field label="Email address" htmlFor="forgot-email" required>
+            <Input
+              id="forgot-email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </Field>
+          {error && <Alert tone="danger" title="Reset request failed">{error}</Alert>}
+          {message && (
+            <Alert tone="success" title="Check your inbox">
+              {message}
+            </Alert>
+          )}
+          {devToken && (
+            <Alert tone="info" title="Development reset link">
+              Email is using the development backend, so the token is shown here instead of relying on
+              delivery.{" "}
+              <Link
+                to={`/reset-password?token=${encodeURIComponent(devToken)}`}
+                className="font-semibold text-primary-700 underline"
+              >
+                Open the reset page
+              </Link>
+              .
+            </Alert>
+          )}
+          <Button type="submit" variant="primary" className="w-full" loading={busy}>
+            Send reset link <ArrowRight className="h-4 w-4" />
+          </Button>
+        </form>
+
+        <p className="mt-6 text-center text-xs text-ink-muted">
+          Remembered your password?{" "}
+          <Link to="/login" className="font-semibold text-primary-600 hover:underline">
+            Back to sign in
+          </Link>
+        </p>
+      </div>
+    </AuthLayout>
+  );
+}
+
+export function ResetPasswordPage() {
+  const [params] = useSearchParams();
+  const token = params.get("token") ?? "";
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [complete, setComplete] = useState(false);
+
+  const passwordIssue = useMemo(() => {
+    if (!password) return null;
+    if (password.length < 10) return "Use at least 10 characters.";
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      return "Include at least one letter and one number.";
+    }
+    return null;
+  }, [password]);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!token) {
+      setError("This reset link is missing its token.");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (passwordIssue) {
+      setError(passwordIssue);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.auth.resetPassword(token, password);
+      setComplete(true);
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : "The password could not be reset. Request a new link and try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <AuthLayout>
+      <div className="rounded-xl border border-line bg-surface p-6 shadow-card sm:p-8">
+        <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary-600">Account recovery</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight text-ink">Choose a new password</h1>
+        <p className="mt-1.5 text-sm leading-6 text-ink-muted">
+          Signing in again will require the new password. Existing refresh sessions are revoked.
+        </p>
+
+        {!token ? (
+          <div className="mt-5 space-y-4">
+            <Alert tone="danger" title="This reset link is incomplete">
+              Request a new password reset link to continue.
+            </Alert>
+            <Link to="/forgot-password" className="btn-primary w-full justify-center">
+              Request a new link
+            </Link>
+          </div>
+        ) : complete ? (
+          <div className="mt-5 space-y-4">
+            <Alert tone="success" title="Password updated">
+              Your password has been changed. Sign in with the new password to continue.
+            </Alert>
+            <Link to="/login" className="btn-primary w-full justify-center">
+              Sign in <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        ) : (
+          <form className="mt-6 space-y-4" onSubmit={submit}>
+            <Field label="New password" htmlFor="new-password" required error={passwordIssue}>
+              <Input
+                id="new-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </Field>
+            <Field label="Confirm new password" htmlFor="confirm-password" required>
+              <Input
+                id="confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={(event) => setConfirm(event.target.value)}
+                required
+              />
+            </Field>
+            {error && <Alert tone="danger" title="Password reset failed">{error}</Alert>}
+            <Button type="submit" variant="primary" className="w-full" loading={busy}>
+              Update password <ArrowRight className="h-4 w-4" />
+            </Button>
+          </form>
+        )}
+
+        {!complete && (
+          <p className="mt-6 text-center text-xs text-ink-muted">
+            Need a new link?{" "}
+            <Link to="/forgot-password" className="font-semibold text-primary-600 hover:underline">
+              Request another reset
+            </Link>
+          </p>
+        )}
       </div>
     </AuthLayout>
   );

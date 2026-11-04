@@ -25,7 +25,7 @@ from api.schemas import (
     ResetPasswordInput,
     StrictModel,
 )
-from services import auth_service
+from services import auth_service, rate_limit
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -70,6 +70,7 @@ def _refresh_token(request: Request, body: dict | None) -> str | None:
 
 @router.post("/register", status_code=201)
 def register(payload: RegisterInput, request: Request, response: Response):
+    rate_limit.enforce_register(request, payload.email)
     result = auth_service.register(payload.model_dump(), _meta(request))
     _set_refresh_cookie(response, result["refreshToken"])
     return _auth_payload(result)
@@ -77,6 +78,7 @@ def register(payload: RegisterInput, request: Request, response: Response):
 
 @router.post("/login")
 def login(payload: LoginInput, request: Request, response: Response):
+    rate_limit.enforce_login(request, payload.email)
     result = auth_service.login(payload.model_dump(), _meta(request))
     _set_refresh_cookie(response, result["refreshToken"])
     return _auth_payload(result)
@@ -84,6 +86,7 @@ def login(payload: LoginInput, request: Request, response: Response):
 
 @router.post("/demo")
 def demo_login(payload: DemoLoginInput, request: Request, response: Response):
+    rate_limit.enforce_login(request, payload.email)
     result = auth_service.demo_login(payload.email, _meta(request))
     _set_refresh_cookie(response, result["refreshToken"])
     return _auth_payload(result)
@@ -91,6 +94,7 @@ def demo_login(payload: DemoLoginInput, request: Request, response: Response):
 
 @router.post("/refresh")
 def refresh(request: Request, response: Response, payload: RefreshBody | None = Body(None)):
+    rate_limit.enforce_refresh(request)
     body = payload.model_dump() if payload else {}
     token = _refresh_token(request, body)
     if not token:
@@ -139,11 +143,12 @@ def revoke_session(session_id: str, user: dict = Depends(current_user)):
 
 @router.post("/password/forgot")
 def forgot_password(payload: ForgotPasswordInput, request: Request):
+    rate_limit.enforce_password_forgot(request, payload.email)
     result = auth_service.forgot_password(payload.email, _meta(request))
     return {
         "ok": True,
-        "message": "If an account exists, a reset link has been issued.",
-        "devToken": result["devToken"],
+        "message": "If an account exists, a reset link has been sent.",
+        "devToken": result.get("devToken"),
     }
 
 

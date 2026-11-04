@@ -10,6 +10,7 @@ DATABASE_URL). Apply migrations first: ``python manage.py migrate``.
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import sys
@@ -33,6 +34,7 @@ from django.db import connection  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from miraiwerk.asgi import application  # noqa: E402
+from services import simulation_service, ticket_service  # noqa: E402
 
 PREFIX = secrets.token_hex(4)
 OWNER = f"usr_test_owner_{PREFIX}"
@@ -149,6 +151,9 @@ def _cleanup_fixtures() -> None:
     # NO ACTION; raw SQL cleanup must remove rows in dependency order.
     project_id = state["project_id"]
     with connection.cursor() as cursor:
+        # Audit tables are protected by database triggers in production. Test
+        # cleanup is an explicit maintenance operation for this session only.
+        cursor.execute("SELECT set_config('miraiwerk.audit_maintenance', 'on', false)")
         if project_id:
             cursor.execute(
                 """
@@ -193,6 +198,7 @@ def _cleanup_fixtures() -> None:
             cursor.execute("DELETE FROM audit_events WHERE project_id = %s", [project_id])
             cursor.execute("DELETE FROM project_members WHERE project_id = %s", [project_id])
             cursor.execute("DELETE FROM ai_calls WHERE project_id = %s", [project_id])
+            cursor.execute("DELETE FROM notifications WHERE project_id = %s", [project_id])
             cursor.execute("DELETE FROM projects WHERE id = %s", [project_id])
         cursor.execute(
             "DELETE FROM forum_replies WHERE thread_id IN (SELECT id FROM forum_threads WHERE workspace_id = %s)",
@@ -217,7 +223,19 @@ def _cleanup_fixtures() -> None:
         cursor.execute("DELETE FROM workspace_members WHERE user_id = ANY(%s::text[])", [TEST_USERS])
         cursor.execute("DELETE FROM project_members WHERE user_id = ANY(%s::text[])", [TEST_USERS])
         cursor.execute("DELETE FROM security_audit WHERE user_id = ANY(%s::text[])", [TEST_USERS])
+        cursor.execute(
+            "DELETE FROM notifications WHERE workspace_id = %s OR recipient_id = ANY(%s::text[])",
+            [WS_ID, TEST_USERS],
+        )
+        cursor.execute(
+            "DELETE FROM notification_preferences WHERE user_id = ANY(%s::text[])", [TEST_USERS]
+        )
+        cursor.execute(
+            "DELETE FROM email_deliveries WHERE recipient IN (SELECT email FROM users WHERE id = ANY(%s::text[]))",
+            [TEST_USERS],
+        )
         cursor.execute("DELETE FROM users WHERE id = ANY(%s::text[])", [TEST_USERS])
+        cursor.execute("SELECT set_config('miraiwerk.audit_maintenance', 'off', false)")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -565,3 +583,34 @@ def test_malformed_ticket_input_returns_422() -> None:
     )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_requested_option_overrides_mismatched_stored_change_label() -> None:
+    change = {
+        "option": "duplicate",
+        "tasksToAdd": [],
+        "tasksToUpdate": [],
+        "tasksToRemove": [],
+        "dependenciesToAdd": [],
+        "assumptions": [],
+        "rationale": "",
+    }
+    proposal = {
+        "ticket_id": "tkt_option_guard",
+        "proposed_changes_json": json.dumps({"accept": change}),
+    }
+    normalized = simulation_service.change_for_proposal_option(proposal, "accept")
+    assert normalized["option"] == "accept"
+
+    sanitized = ticket_service._sanitize_analysis(
+        {
+            "recommendedOption": "duplicate",
+            "recommendationRationale": "",
+            "relatedRecords": [],
+            "evidence": [],
+            "duplicateCandidates": [],
+            "proposedChanges": {"accept": change, "split": None},
+        },
+        {"requirements": [], "milestones": [], "tasks": [], "relatedTickets": []},
+    )
+    assert sanitized["analysis"]["proposedChanges"]["accept"]["option"] == "accept"

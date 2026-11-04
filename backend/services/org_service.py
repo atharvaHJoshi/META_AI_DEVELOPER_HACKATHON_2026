@@ -7,7 +7,7 @@ from django.db import connection, transaction
 from core.common import iso_datetime, new_id, slugify
 from core.errors import ApiError
 from platform_app import models
-from services import authz
+from services import authz, email_service
 
 ORGANIZATION_ROLES = ("owner", "admin", "manager", "member", "viewer")
 
@@ -280,10 +280,9 @@ def _resolve_target_user(actor_id: str, input_data: dict):
         if target is None:
             new_id_ = new_id("usr")
             name = email.split("@")[0] or "Invited member"
-            models.User.objects.create(
+            return models.User.objects.create(
                 id=new_id_, name=name, email=email, title="", status="pending"
             )
-            return models.User(id=new_id_)
         return target
     return None
 
@@ -314,6 +313,17 @@ def add_workspace_member(actor_id: str, workspace_id: str, input_data: dict) -> 
             {"workspaceId": workspace_id, "memberId": target.id, "role": role},
         )
 
+    invited = models.User.objects.filter(id=target.id).only("email", "name", "status").first()
+    if invited is not None and invited.status == "pending":
+        workspace = models.Workspace.objects.filter(id=workspace_id).only("name").first()
+        actor = models.User.objects.filter(id=actor_id).only("name").first()
+        email_service.send_workspace_invitation(
+            email=invited.email,
+            workspace_name=workspace.name if workspace else "MIRAIWERK",
+            actor_name=actor.name if actor else "A workspace administrator",
+            role=role,
+        )
+
 
 def add_organization_member(actor_id: str, organization_id: str, input_data: dict) -> None:
     authz.assert_organization_access(actor_id, organization_id, ["owner", "admin"])
@@ -329,6 +339,16 @@ def add_organization_member(actor_id: str, organization_id: str, input_data: dic
     models.OrganizationMember.objects.update_or_create(
         organization_id=organization_id, user_id=target.id, defaults={"role": role}
     )
+    invited = models.User.objects.filter(id=target.id).only("email", "name", "status").first()
+    if invited is not None and invited.status == "pending":
+        organization = models.Organization.objects.filter(id=organization_id).only("name").first()
+        actor = models.User.objects.filter(id=actor_id).only("name").first()
+        email_service.send_organization_invitation(
+            email=invited.email,
+            organization_name=organization.name if organization else "MIRAIWERK",
+            actor_name=actor.name if actor else "An organization administrator",
+            role=role,
+        )
 
 
 def update_workspace_member_role(

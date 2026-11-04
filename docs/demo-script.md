@@ -28,7 +28,7 @@ curl -s http://localhost:4000/api/bootstrap -H 'x-user-id: usr_maya' \
   | jq '{projects:[.projects[]|{id,name,currentPlanVersion,pendingDecisionCount}],aiMode}'
 ```
 
-`ai` reports `gemini` or `meta` when a key is configured. The demo works in either mode; the labelled deterministic fallback is used when no key is present.
+`ai` reports `gemini` when a Gemini key is configured and `deterministic-demo` otherwise. Selecting `AI_PROVIDER=meta` also uses the labelled deterministic fallback in this build, because the Meta adapter has not been ported to Python.
 
 Expected seed state:
 
@@ -80,7 +80,7 @@ Point out:
 
 **Say:**
 
-> That badge is deliberate. There is no hidden model call. With a Gemini or Meta key configured, the same pipeline uses that provider and labels the proposal accordingly. If the call fails, the fallback is marked `degraded`, not presented as a success.
+> That badge is deliberate. There is no hidden model call. With a Gemini key configured, the same pipeline uses Gemini and labels the proposal accordingly. The Meta provider is configuration-only in the Python build and falls back to labelled deterministic rules. If a configured Gemini call fails, the fallback is marked `degraded`, not presented as a success.
 
 ## 0:45 — Generate a plan draft
 

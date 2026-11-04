@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import uuid
 from typing import Any
 
 import anyio
@@ -22,6 +24,7 @@ if not django_settings.configured:
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.exceptions import RequestValidationError  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.middleware.trustedhost import TrustedHostMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from starlette.exceptions import HTTPException as StarletteHTTPException  # noqa: E402
 
@@ -30,6 +33,13 @@ from core.errors import ApiError, error_envelope  # noqa: E402
 from django.db import close_old_connections  # noqa: E402
 
 logger = logging.getLogger("miraiwerk")
+
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{8,64}$")
+
+
+def _allowed_hosts() -> list[str]:
+    hosts = getattr(django_settings, "ALLOWED_HOSTS", []) or []
+    return list(hosts) if hosts else ["*"]
 
 
 def _flatten_validation_errors(exc: RequestValidationError) -> dict[str, Any]:
@@ -71,7 +81,12 @@ def create_app() -> FastAPI:
             "x-workspace-id",
             "x-request-id",
         ],
+        expose_headers=["x-request-id"],
     )
+
+    hosts = _allowed_hosts()
+    if hosts and "*" not in hosts:
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=hosts)
 
     @app.middleware("http")
     async def close_django_connections(request: Request, call_next):
@@ -81,10 +96,30 @@ def create_app() -> FastAPI:
             await anyio.to_thread.run_sync(close_old_connections)
 
     @app.middleware("http")
-    async def security_headers(request: Request, call_next):
+    async def request_context(request: Request, call_next):
+        """Attach a correlation ID and enforce browser security headers.
+
+        The ID is accepted from a trusted proxy when it looks like an opaque
+        token; otherwise MIRAIWERK generates one. Audit rows and structured logs
+        use the same value, so one request can be traced through auth, AI and
+        decision writes.
+        """
+        incoming = request.headers.get("x-request-id", "")
+        request_id = incoming if _REQUEST_ID_RE.fullmatch(incoming) else f"req_{uuid.uuid4().hex}"
+        request.state.request_id = request_id
         response = await call_next(request)
+        response.headers["x-request-id"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
+        )
+        if getattr(django_settings, "SECURE_HSTS_SECONDS", 0):
+            response.headers["Strict-Transport-Security"] = (
+                f"max-age={django_settings.SECURE_HSTS_SECONDS}; includeSubDomains; preload"
+            )
         return response
 
     @app.exception_handler(ApiError)
@@ -183,6 +218,7 @@ def create_app() -> FastAPI:
         bootstrap,
         collab,
         decisions,
+        notifications,
         projects,
         tasks,
         tickets,
@@ -199,6 +235,7 @@ def create_app() -> FastAPI:
     app.include_router(decisions.router, prefix=api)
     app.include_router(workspaces.organizations_router, prefix=api)
     app.include_router(workspaces.workspaces_router, prefix=api)
+    app.include_router(notifications.router, prefix=api)
     app.include_router(ai.router, prefix=api)
 
     return app

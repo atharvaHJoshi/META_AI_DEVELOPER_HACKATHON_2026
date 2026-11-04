@@ -16,7 +16,7 @@ from core.common import iso_date, iso_datetime, new_id, num
 from core.errors import ApiError
 from ripplemap import simulate_scenario
 from ripplemap.simulate import OPTION_LABELS
-from services import authz, plan_service
+from services import authz, notification_service, plan_service, rate_limit
 from services.snapshot import build_graph, constraints_of, load_plan_bundle
 from core.db import fetchall_dicts as _fetchall_dicts, fetchone_dict as _fetchone_dict, parse_json
 
@@ -249,6 +249,7 @@ def create_ticket(user_id: str, input_data: dict) -> dict:
                     f"Ticket created from {input_data.get('source', 'manual')}: {input_data['title']}",
                 ],
             )
+    notification_service.notify_ticket_created(user_id, ticket_id)
     return get_ticket_detail(user_id, ticket_id)
 
 
@@ -329,12 +330,15 @@ def _build_analysis_context(bundle: dict, ticket: dict, related_tickets: list[di
     }
 
 
-def _analyze_with_ai(context: dict, project_id: str, workspace_id: str | None) -> dict:
+def _analyze_with_ai(
+    context: dict, project_id: str, workspace_id: str | None, user_id: str | None = None
+) -> dict:
     ai = config.ai_mode()
     provider = ai["provider"]
     project_input = {
         "projectId": project_id,
         "workspaceId": workspace_id,
+        "userId": user_id,
         "workflow": "ticket_analysis",
     }
 
@@ -463,7 +467,7 @@ def _sanitize_analysis(analysis: dict, context: dict) -> dict:
                 f'Discarded duplicate candidate "{candidate.get("ticketId")}" outside this project.'
             )
 
-    def sanitize_change(change: dict | None) -> dict | None:
+    def sanitize_change(change: dict | None, expected_option: str) -> dict | None:
         if change is None:
             return None
         added_temp_ids: set[str] = set()
@@ -496,6 +500,7 @@ def _sanitize_analysis(analysis: dict, context: dict) -> dict:
             )
         return {
             **change,
+            "option": expected_option,
             "tasksToAdd": tasks_to_add,
             "tasksToUpdate": [
                 update
@@ -516,7 +521,7 @@ def _sanitize_analysis(analysis: dict, context: dict) -> dict:
     recommendation = analysis.get("recommendedOption")
     rationale = analysis.get("recommendationRationale", "")
     proposed = dict(analysis.get("proposedChanges") or {})
-    split = sanitize_change(proposed.get("split"))
+    split = sanitize_change(proposed.get("split"), "split")
     if recommendation == "split" and split is None:
         recommendation = "accept"
         rationale = (
@@ -536,7 +541,7 @@ def _sanitize_analysis(analysis: dict, context: dict) -> dict:
             "evidence": evidence,
             "duplicateCandidates": duplicate_candidates,
             "proposedChanges": {
-                "accept": sanitize_change(proposed.get("accept")),
+                "accept": sanitize_change(proposed.get("accept"), "accept"),
                 "split": split,
             },
         },
@@ -616,8 +621,10 @@ def analyze_ticket(user_id: str, ticket_id: str) -> dict:
         workspace_row = cursor.fetchone()
     workspace_id = workspace_row[0] if workspace_row else None
 
+    rate_limit.enforce_ai(user_id, workspace_id, "ticket_analysis")
+
     try:
-        result = _analyze_with_ai(context, row["project_id"], workspace_id)
+        result = _analyze_with_ai(context, row["project_id"], workspace_id, user_id)
     except Exception as exc:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -827,4 +834,5 @@ def analyze_ticket(user_id: str, ticket_id: str) -> dict:
                 ],
             )
 
+    notification_service.notify_decision_proposed(user_id, proposal_id)
     return get_ticket_detail(user_id, ticket_id)

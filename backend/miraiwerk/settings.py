@@ -27,11 +27,23 @@ def _load_dotenv() -> None:
 
 _load_dotenv()
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or os.environ.get(
-    "JWT_SECRET", "miraiwerk-dev-only-secret-change-me-before-production"
+from core.env import (  # noqa: E402 - must run after .env is loaded
+    DEV_DJANGO_SECRET,
+    app_env,
+    get_bool,
+    get_int,
+    get_list,
+    is_production,
+    secret,
+    validate_production_config,
 )
-DEBUG = (os.environ.get("NODE_ENV") or "development").lower() != "production"
-ALLOWED_HOSTS = ["*"]
+
+APP_ENV = app_env()
+IS_PRODUCTION = is_production()
+DEBUG = (not IS_PRODUCTION) and get_bool("DEBUG", True)
+SECRET_KEY = secret("DJANGO_SECRET_KEY", DEV_DJANGO_SECRET)
+ALLOWED_HOSTS = get_list("ALLOWED_HOSTS") or ([] if IS_PRODUCTION else ["*"])
+CSRF_TRUSTED_ORIGINS = get_list("CSRF_TRUSTED_ORIGINS")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -124,3 +136,37 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Admin access uses the product's own Argon2id/scrypt password hashes.
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False
+
+# ---------------------------------------------------------------------------
+# Security and email configuration
+# ---------------------------------------------------------------------------
+SESSION_COOKIE_SECURE = get_bool("COOKIE_SECURE", IS_PRODUCTION)
+CSRF_COOKIE_SECURE = get_bool("COOKIE_SECURE", IS_PRODUCTION)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = "same-origin"
+X_FRAME_OPTIONS = "DENY"
+SECURE_SSL_REDIRECT = get_bool("SECURE_SSL_REDIRECT", IS_PRODUCTION)
+SECURE_HSTS_SECONDS = get_int("SECURE_HSTS_SECONDS", 31536000 if IS_PRODUCTION else 0)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = get_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", IS_PRODUCTION)
+SECURE_HSTS_PRELOAD = get_bool("SECURE_HSTS_PRELOAD", IS_PRODUCTION)
+if get_bool("TRUST_X_FORWARDED_PROTO", IS_PRODUCTION):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
+)
+DEFAULT_FROM_EMAIL = os.environ.get(
+    "DEFAULT_FROM_EMAIL", "MIRAIWERK AI <no-reply@miraiwerk.local>"
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = get_int("EMAIL_PORT", 587)
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = get_bool("EMAIL_USE_TLS", True)
+EMAIL_USE_SSL = get_bool("EMAIL_USE_SSL", False)
+EMAIL_TIMEOUT = get_int("EMAIL_TIMEOUT", 10)
+
+if IS_PRODUCTION:
+    validate_production_config()
+# ---------------------------------------------------------------------------
+

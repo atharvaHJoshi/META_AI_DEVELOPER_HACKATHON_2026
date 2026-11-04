@@ -2,20 +2,24 @@ import { expect, test } from "@playwright/test";
 import { DEMO_EMAIL, DEMO_PASSWORD, signIn } from "./helpers";
 
 test.describe("MIRAIWERK access and keyboard", () => {
-  test("sends unauthenticated visitors to the sign-in screen", async ({ page }) => {
-    await page.goto("/");
-    await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByRole("heading", { name: "Sign in to your workspace" })).toBeVisible();
-  });
+  test.describe("unauthenticated visitors", () => {
+    test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("rejects an unknown seeded email with a visible failure state", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByLabel("Email address").fill("nobody@example.invalid");
-    await page.getByLabel("Password").fill(DEMO_PASSWORD);
-    await page.getByRole("button", { name: /Sign in/ }).click();
+    test("sends unauthenticated visitors to the sign-in screen", async ({ page }) => {
+      await page.goto("/");
+      await expect(page).toHaveURL(/\/login/);
+      await expect(page.getByRole("heading", { name: "Sign in to your workspace" })).toBeVisible();
+    });
 
-    await expect(page.getByRole("alert")).toBeVisible();
-    await expect(page.getByRole("alert")).toContainText(/could not sign in|sign/i);
+    test("rejects an unknown seeded email with a visible failure state", async ({ page }) => {
+      await page.goto("/login");
+      await page.getByLabel("Email address").fill("nobody@example.invalid");
+      await page.getByLabel("Password").fill(DEMO_PASSWORD);
+      await page.getByRole("button", { name: /Sign in/ }).click();
+
+      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(page.getByRole("alert")).toContainText(/could not sign in|sign/i);
+    });
   });
 
   test("signs in to the workspace and exposes the primary destinations", async ({ page }) => {

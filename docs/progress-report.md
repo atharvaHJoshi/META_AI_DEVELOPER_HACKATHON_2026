@@ -1,7 +1,7 @@
 # MIRAIWERK AI — Progress Report
 
 **Report date:** 4 November 2026  
-**Status:** Python backend rebuild complete; end-to-end demo working; production hardening and deferred integrations remain  
+**Status:** Python backend and end-to-end demo complete; Phase 1 production security and Phase 2 email/notifications implemented; Phase 3 AI evaluation and cost controls next  
 **Repository:** `/home/aathi/Documents/HACKATHON/META_AI_HACKATHON_2026`  
 **Product:** MIRAIWERK AI  
 **Tagline:** The intelligence engine for projects that move forward.
@@ -22,18 +22,25 @@ The product combines a multi-tenant delivery workspace with **RippleMap**, a det
 - The React frontend covers every primary route: overview, projects, task board, roadmap, teams, plan generator, tickets, RippleMap, history, documentation and diagrams, meetings, discussions, code-workspace boundary, organization, roles, audit, settings and onboarding.
 - Documentation now has a **Markdown authoring workbench** with `Write / Preview / Split` tabs and a sanitised GFM renderer, plus a responsive **Mermaid diagram workbench** with live rendering and inline syntax errors.
 - The backend is a single ASGI application: FastAPI for `/api`, Django admin for `/admin`, Django ORM for persistence, PostgreSQL 16 for data.
+- **Phase 1 production security is implemented:** production configuration fails closed, auth and AI routes share PostgreSQL-backed fixed-window limits, request IDs and browser security headers are applied, and security/project/decision audit tables are append-only at the database level.
+- **Phase 2 email and notifications are implemented:** the notification centre, per-category preferences, transactional email, delivery logging and an idempotent reminder command are wired into task, ticket, decision, meeting, mention and milestone events.
 - The deterministic fallback is explicitly labelled `deterministic-demo` / `miraiwerk-rules-v1`; it is never presented as a model result.
 
 ### Verified snapshot
 
+All checks below were run on 4 November 2026 against the working tree described in this report.
+
 | Check | Command | Result |
 | --- | --- | --- |
-| Backend tests | `npm run test:backend` | **45 passed** |
-| Frontend unit/component tests | `npm run test:frontend` | **11 passed** (4 files) |
-| End-to-end browser journeys | `npm run test:e2e` | **15 passed** (8 specs) |
-| TypeScript typecheck | `npm run typecheck` | **Passing** |
+| Backend tests | `npm run test:backend` with `RATE_LIMIT_ENABLED=false` | **55 passed** (5 files) |
+| Frontend unit/component tests | `npm run test:frontend` | **14 passed** (5 files) |
+| End-to-end browser journeys | `npm run test:e2e` | **16 passed** (15 journeys + 1 authenticated setup) |
+| TypeScript typecheck | `npm run typecheck -w @miraiwerk/frontend` | **Passing** |
 | Production build | `npm run build` | **Passing** |
 | API health | `GET /api/health` | `{"status":"ok","ai":"gemini",...}` |
+| Live security headers | `GET /api/health` response | `x-request-id`, CSP, `nosniff`, `DENY`, `Permissions-Policy` present |
+| Live notification API | `GET /api/notifications`, `GET /api/notification-preferences` | **200**, 8 categories, `security` locked |
+| Live password recovery | `POST /api/auth/password/forgot` | **200**, `devToken` returned in development |
 
 ### Recent change history
 
@@ -44,7 +51,8 @@ The product combines a multi-tenant delivery workspace with **RippleMap**, a det
 | `55affdd` | Rendered Mermaid diagrams live in documentation. |
 | `cb9be53` | Made Mermaid previews responsive and fixed diagram-label truncation. |
 | `2311197` | Introduced the contained split-pane Mermaid workbench. |
-| _working tree_ | Markdown `Write / Preview / Split` preview, sanitisation, tests, E2E coverage and this report. |
+| `d29ee1e` / `0bf4379` | Added the Markdown preview and responsive Mermaid workbench documented in §5.5. |
+| _working tree_ | Phase 1/2: production config guardrails, shared rate limits, request IDs and security headers, append-only audit triggers, notification centre and preferences, transactional email, password recovery UI, E2E storage-state authentication and RippleMap simulation-race fix. |
 
 ---
 
@@ -80,8 +88,8 @@ backend/ (one ASGI process on port 4000)
    ├── /api    FastAPI — HTTP API, Pydantic validation, JWT auth
    ├── /admin  Django admin — staff-only operator console
    ├── platform_app  Django models, migrations, ORM, admin, seed command
-   ├── api/          routers + request schemas
-   ├── services/     business logic and authorization
+   ├── api/          routers, request schemas and security middleware
+   ├── services/     business logic, authorization, rate limits, email and notifications
    ├── aiml/         Gemini provider, deterministic rules, policy, schemas
    └── ripplemap/    deterministic scheduling and scenario simulation
    ▼
@@ -90,8 +98,8 @@ PostgreSQL 16 (container `miraiwerk-db`, host port 55434)
 
 ### Boundaries
 
-- **Django owns the schema.** All 29 models, three migrations, ORM access, admin registrations and demo seeding live in `backend/platform_app`.
-- **FastAPI owns HTTP.** Routers parse and validate requests, resolve the caller and return contract-shaped JSON. Business rules live in `backend/services`, not in route handlers.
+- **Django owns the schema.** All 33 models, five migrations, ORM access, admin registrations and demo seeding live in `backend/platform_app`.
+- **FastAPI owns HTTP.** Routers parse and validate requests, resolve the caller and return contract-shaped JSON. Business rules live in `backend/services`, not in route handlers. Security headers, request IDs and trusted-host checks are applied in `backend/api/app.py`.
 - **AIML and RippleMap are pure libraries.** They have no knowledge of Django, FastAPI or PostgreSQL. The dependency direction is one-way: `frontend → api → services → aiml/ripplemap`.
 - **One deployment unit.** The app is a modular monolith, not a distributed system. There is no service mesh, message broker or second database.
 - **The browser never receives a model key.** Provider keys are server-side environment variables; `VITE_*` variables are limited to the API base URL.
@@ -115,16 +123,17 @@ The frontend and backend are started independently with `./run-backend.sh` and `
 ### 4.1 Platform foundation
 
 - Django 6.1 project with PostgreSQL via `DATABASE_URL` (defaults to the Docker container on port 55434).
-- 29 models covering identity, tenancy, delivery, decision intelligence, AI telemetry and collaboration.
-- Three migrations, including database defaults and the plan-version parent relationship.
-- 29 Django admin registrations with list displays, filters, search fields and raw-ID widgets.
+- 33 models covering identity, tenancy, delivery, decision intelligence, AI telemetry, audit, rate limiting and notifications.
+- Five migrations, including database defaults, plan-version parent relationships, notification/rate-limit tables and PostgreSQL append-only audit triggers.
+- 33 Django admin registrations with list displays, filters, search fields and raw-ID widgets. Security, project and decision audit models are view-only in the admin.
 - Management commands:
   - `seed_demo` — resets and recreates the curated demo scenario through the same service layer as the API.
   - `create_admin` — creates or promotes a Django staff user.
+  - `notify_reminders` — creates idempotent due-soon, overdue and approaching-milestone notifications for cron or a future scheduler.
 - ASGI composition in `backend/miraiwerk/asgi.py`: `/api` and `/admin` served by one process, WhiteNoise for admin static files.
-- FastAPI middleware for CORS, security headers (`X-Content-Type-Options`, `Referrer-Policy`) and Django connection cleanup after each request.
-- Consistent error envelope, validation-error handling and `GET /api/health`.
-- 75 HTTP endpoints across 10 routers (74 domain endpoints plus health).
+- FastAPI middleware for CORS, trusted hosts in production, request correlation IDs, browser security headers (CSP, HSTS when enabled, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) and Django connection cleanup after each request.
+- Consistent error envelope, validation-error handling and `GET /api/health`, which now performs a database check.
+- 65 HTTP paths / 81 operations across 11 domain routers plus health.
 
 ### 4.2 Authentication and session security
 
@@ -135,10 +144,13 @@ The frontend and backend are started independently with `./run-backend.sh` and `
 - Rotating refresh tokens stored as hashes; refresh-token reuse revokes the entire session family and writes a security-audit event.
 - Refresh token in an httpOnly, SameSite=Lax cookie; `COOKIE_SECURE` is configurable for HTTPS deployments.
 - Session listing and revocation from the settings page.
-- Password-reset tokens are one-time, hashed at rest and expiry-bound. In development the raw token is returned as `devToken`; **production email delivery is not wired yet** (see §8).
+- Password-reset tokens are one-time, hashed at rest and expiry-bound. Reset emails are delivered through the configured Django email backend; the raw token is returned as `devToken` only outside production. Development defaults to the console backend; production rejects the console backend at startup and requires SMTP/SES-compatible configuration.
 - Optional Meta OAuth start/callback flow with state validation and account linking.
 - Profile editing: name, title and avatar colour.
-- Security audit records registration, login, demo login, logout, refresh reuse, password changes, role changes and member changes, with IP/user-agent metadata.
+- Security audit records registration, login, demo login, logout, refresh reuse, password changes, role changes and member changes, with IP/user-agent metadata and a request correlation ID.
+- **Production configuration fails closed.** `APP_ENV=production` requires strong `JWT_SECRET` and `DJANGO_SECRET_KEY`, explicit non-wildcard `ALLOWED_HOSTS`, configured frontend origins, secure cookies, HTTPS redirect, a real email backend and `AUTH_ALLOW_DEMO=false`.
+- **Abuse controls are shared across processes.** Fixed-window counters are stored in PostgreSQL and cover login (per account and IP), registration, password reset, refresh, plan generation, ticket analysis, document drafting and meeting summaries. AI workflows also enforce per-user and per-workspace daily quotas. The limiter hashes identities before storage and returns `429 RATE_LIMITED` with `retryAfter`.
+- **Audit history is immutable in the database.** PostgreSQL triggers reject `UPDATE` and `DELETE` on `security_audit`, `audit_events` and `decision_audit`; a session-level maintenance flag exists only for tests and destructive local reseeds.
 
 ### 4.3 Multi-tenancy and role-based access
 
@@ -216,6 +228,10 @@ The frontend and backend are started independently with `./run-backend.sh` and `
 - **Meeting AI** — summarise notes into a structured summary and convert action items into tasks.
 - **Discussions** — create threads, categories (`general`, `decision`, `question`, `risk`), replies, solved state and project association.
 - **Audit** — workspace security events and project audit events, with search, outcome filter and CSV export in the UI.
+- **Notifications** — a workspace-scoped notification centre with unread/all tabs, mark-read, mark-all-read, pagination and route links. Events are created by backend services for task assignment, ticket intake, decision proposals/outcomes, meeting scheduling, discussion @mentions and approaching milestones. Dedupe keys make recurring reminders idempotent.
+- **Preferences** — eight categories (`tasks`, `tickets`, `decisions`, `meetings`, `discussions`, `milestones`, `digests`, `security`) with independent in-app and email switches. Security notifications are locked on and cannot be disabled.
+- **Transactional email** — password reset, workspace and organization invitations, task assignment, decision outcome, meeting invitation and generic notification templates. Every attempt is recorded in `email_deliveries` with status and error. Delivery failures are logged and never block the originating API request.
+- **Reminders** — `notify_reminders` creates due-soon, overdue and milestone reminders, including project managers for overdue work, and is safe to run once a day.
 
 ### 4.7 AI layer and trust labelling
 
@@ -225,45 +241,52 @@ The frontend and backend are started independently with `./run-backend.sh` and `
   - `provider: "deterministic-demo"`
   - `model: "miraiwerk-rules-v1"`
 - When a configured model call fails and `AI_FALLBACK_ON_ERROR=true`, the result is marked `degraded` with a notice; it is never presented as successful model output.
-- AI calls recorded in `ai_calls` with workflow, provider, model, latency, success, degraded flag, error and usage JSON.
+- AI calls recorded in `ai_calls` with workflow, provider, model, user, workspace, latency, success, degraded flag, error and usage JSON.
 - AI status endpoint exposes provider, model, configured flags and fallback state without exposing keys.
 - Workspace AI usage totals are shown on the settings and code-workspace pages.
+- Shared daily quotas protect AI workflows: 100 calls per user and 500 per workspace by default, configurable through `RATE_LIMIT_AI_USER_DAILY` and `RATE_LIMIT_AI_WORKSPACE_DAILY`. These are request quotas, not token-cost budgets; provider-level cost controls remain Phase 3 work.
 - The original 40-case labelled evaluation harness has **not yet been ported** to the Python rules; its data and report remain in git history under `aiml/evaluations/` (see §8).
 
 ### 4.8 API surface
 
-| Router | Prefix | Endpoints | Covers |
-| --- | --- | --- | --- |
-| `health` | `/api/health` | 1 | Liveness, provider label, timestamp |
-| `auth` | `/api/auth` | 14 | Register, login, demo, refresh, logout, me, profile, sessions, forgot/reset, OAuth status/start/callback |
-| `bootstrap` | `/api/bootstrap` | 1 | Session bootstrap: user, organizations, workspaces, projects |
-| `projects` | `/api/projects` | 6 | List, generate plan, create, plan, tickets, history |
-| `tickets` | `/api/tickets` | 3 | Create, get, analyse |
-| `decisions` | `/api/decisions` | 6 | List, get, simulate, approve, reject, clarify |
-| `tasks` | `/api` | 8 | Project tasks, task update, dependencies, roadmap, milestones |
-| `collab` | `/api` | 14 | Documents, meetings, meeting AI, threads and replies |
-| `organizations` | `/api/organizations` | 5 | List/create, members, member role updates |
-| `workspaces` | `/api/workspaces` | 14 | List/create, detail/update, members, teams, workload, audit, onboarding |
-| `ai` | `/api/ai` | 3 | Status, document draft, usage |
+| Area | Prefixes | Paths | Operations | Covers |
+| --- | --- | ---: | ---: | --- |
+| Health | `/api/health` | 1 | 1 | Liveness, database check, provider label, timestamp |
+| Auth | `/api/auth` | 14 | 14 | Register, login, demo, refresh, logout, me, profile, sessions, forgot/reset, OAuth status/start/callback |
+| Bootstrap | `/api/bootstrap` | 1 | 1 | Session bootstrap: user, organizations, workspaces, projects |
+| Projects and planning | `/api/projects` | 9 | 12 | List, generate plan, create, plan, tickets, history, tasks, dependencies, roadmap, milestones |
+| Tickets | `/api/tickets` | 3 | 3 | Create, get, analyse |
+| Decisions | `/api/decisions` | 6 | 6 | List, get, simulate, approve, reject, clarify |
+| Tasks and milestones | `/api/tasks`, `/api/milestones` | 2 | 2 | Task update, milestone update |
+| Collaboration | `/api/documents`, `/api/meetings`, `/api/threads` | 6 | 8 | Documents, meetings, meeting AI/actions, threads and replies |
+| Organizations | `/api/organizations` | 3 | 5 | List/create, members, member role updates |
+| Workspaces | `/api/workspaces` | 12 | 20 | List/create, detail/update, members, teams, workload, audit, onboarding, documents, meetings, threads |
+| Notifications | `/api/notifications`, `/api/notification-preferences` | 5 | 6 | Feed, unread count, mark read/all read, category preferences |
+| AI | `/api/ai` | 3 | 3 | Status, document draft, usage |
+| **Total** | | **65** | **81** | |
 
 All endpoints are documented with request/response examples in [`docs/api.md`](api.md).
 
 ### 4.9 Data model
 
-**Identity and tenancy:** `User`, `Session`, `OAuthAccount`, `OneTimeToken`, `SecurityAudit`, `Organization`, `OrganizationMember`, `Workspace`, `WorkspaceMember`, `Team`, `TeamMember`.
+**Identity and tenancy:** `User`, `Session`, `OAuthAccount`, `OneTimeToken`, `SecurityAudit`, `RateLimitBucket`, `EmailDelivery`, `Organization`, `OrganizationMember`, `Workspace`, `WorkspaceMember`, `Team`, `TeamMember`.
 
 **Delivery:** `Project`, `ProjectMember`, `PlanVersion`, `Requirement`, `Milestone`, `Task`, `TaskDependency`, `AuditEvent`.
 
 **Decision intelligence:** `Ticket`, `TicketLink`, `DecisionProposal`, `ScenarioRun`, `DecisionAudit`, `AiCall`.
 
-**Collaboration:** `Document`, `Meeting`, `ForumThread`, `ForumReply`.
+**Collaboration:** `Document`, `Meeting`, `ForumThread`, `ForumReply`, `Notification`, `NotificationPreference`.
 
 Key properties:
 
 - Application-generated text IDs (`prj_`, `req_`, `task_`, `tkt_`, `dec_`, `scn_`, `audit_`) keep seeded and API-created records identical in shape.
 - `plan_versions.snapshot_json` stores a complete reconstructable plan bundle.
-- `scenario_runs.input_hash` is the approval guard against stale or mismatched simulations.
-- `decision_audit` records before/after state; `audit_events` is the project-level timeline.
+- `scenario_runs.input_hash` is the approval guard against stale or mismatched simulations; the requested option is authoritative even if stored model output carries a mismatched label.
+- `decision_audit` records before/after state; `audit_events` is the project-level timeline. PostgreSQL triggers make all three audit tables append-only.
+- `security_audit.request_id` and `ai_calls.user_id` connect security, AI and decision activity to one request or actor.
+- `rate_limit_buckets` stores hashed identities and fixed-window counters shared by every API process.
+- `notifications` carries workspace/project scope, event type, entity link and read state; `notification_preferences` stores per-category in-app/email choices with security locked on.
+- `email_deliveries` records every attempted transactional email and its outcome for operator inspection.
 - Tasks carry `source_ticket_id`, so approved work remains traceable to the intake record.
 
 ### 4.10 Operations
@@ -273,6 +296,9 @@ Key properties:
 - `npm run db:up`, `db:migrate`, `db:seed`, `db:reset`, `admin` cover local operations.
 - `seed_demo` is deterministic by default; `--ai` opts into the configured provider.
 - Staff users can use the same credentials for the Django admin.
+- Email is configured through `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`/`EMAIL_USE_SSL`, `EMAIL_TIMEOUT` and `DEFAULT_FROM_EMAIL`. Development defaults to the console backend; production startup rejects it.
+- `python manage.py notify_reminders` creates due-soon, overdue and milestone notifications. It is idempotent per day and can be run from cron or a future Celery beat schedule.
+- Playwright authenticates the demo owner once in `e2e/auth.setup.ts` and reuses `storageState`; unauthenticated access tests explicitly opt out. The RippleMap journey creates its own ticket and pending decision through the API so it does not depend on leftover seed state.
 
 ---
 
@@ -280,7 +306,7 @@ Key properties:
 
 ### 5.1 Shell and design system
 
-- Responsive `AppShell` with grouped navigation (Workspace, Change intelligence, Collaboration, Administration), workspace switcher, breadcrumbs, project/module search and a keyboard-accessible mobile navigation.
+- Responsive `AppShell` with grouped navigation (Workspace, Change intelligence, Collaboration, Administration), workspace switcher, breadcrumbs, project/module search, a notification bell with unread count and a keyboard-accessible mobile navigation.
 - Role-aware navigation; pages still rely on API authorization rather than hidden links.
 - Shared UI primitives: buttons, cards, fields, inputs, selects, textareas, badges, alerts, modals, tabs, tooltips, avatars, stat cards, progress bars, empty/error/loading states.
 - Tailwind design tokens for canvas, surface, ink, line, primary, sage, warning and danger.
@@ -290,7 +316,7 @@ Key properties:
 
 | Route | Page |
 | --- | --- |
-| `/login`, `/register`, `/auth/callback` | Authentication and OAuth callback |
+| `/login`, `/register`, `/forgot-password`, `/reset-password`, `/auth/callback` | Authentication, password recovery and OAuth callback |
 | `/onboarding` | Workspace activation |
 | `/` | Overview: project health, decisions, milestones, workload |
 | `/projects` | Projects |
@@ -324,6 +350,8 @@ Key properties:
 - Meetings with scheduling, notes, AI summary, action-item conversion and status changes.
 - Discussions with category/solved filters, search, thread creation, replies and solved state.
 - Organization and workspace administration, role matrix and assignments, audit search/export, profile and session settings, AI configuration status.
+- Notification centre with unread/all tabs, mark-read, mark-all-read, pagination and deep links; notification preferences with per-category in-app/email switches and a locked security category.
+- Forgot-password and reset-password pages, including a development reset link when the console email backend is active, with validation and completion states.
 - Code workspace page that states the integration boundary explicitly instead of showing fake repositories or commits.
 
 ### 5.5 Documentation and diagram workbench (newest work)
@@ -371,18 +399,19 @@ The documentation page was upgraded using Nirnaya's Markdown editor and diagram 
 
 ## 6. Verification detail
 
-### 6.1 Backend suite (45 tests)
+### 6.1 Backend suite (55 tests)
 
 | File | Tests | Coverage |
 | --- | --- | --- |
 | `backend/tests/test_ripplemap.py` | 8 | Working-day scheduling, cycle detection, dangling dependencies, deterministic scheduling, accept/defer simulation, input-hash stability |
-| `backend/tests/test_api_integration.py` | 13 | Health, project creation, tenant isolation, RBAC, ticket creation/analysis, simulation, approval versioning, stale protection, stored-scenario requirement, defer semantics, validation errors |
+| `backend/tests/test_api_integration.py` | 14 | Health, project creation, tenant isolation, RBAC, ticket creation/analysis, simulation, approval versioning, stale protection, stored-scenario requirement, defer semantics, validation errors, requested-option normalisation |
 | `backend/tests/test_api_surface.py` | 22 | Registration/login/session/password flows, organizations, workspaces, teams, tasks, milestones, dependencies, documents, meetings, discussions, AI assists, reject/clarify outcomes |
 | `backend/tests/test_admin.py` | 2 | Staff admin login/registry pages, non-staff denial |
+| `backend/tests/test_security_notifications.py` | 9 | Shared rate limits, hashed identities, login 429 wiring, append-only audit triggers, production config, email delivery, notification centre, preferences and task-assignment hook |
 
-The suites are hermetic: they create their own users/workspaces/projects and clean up through the Django ORM. They require PostgreSQL and applied migrations.
+The suites are hermetic: they create their own users/workspaces/projects and clean up through the Django ORM. They require PostgreSQL and applied migrations. Rate limits are disabled in test runs with `RATE_LIMIT_ENABLED=false`, while dedicated tests exercise the limiter directly with monkeypatched settings.
 
-### 6.2 Frontend suite (11 tests)
+### 6.2 Frontend suite (14 tests)
 
 | File | Tests | Coverage |
 | --- | --- | --- |
@@ -390,25 +419,33 @@ The suites are hermetic: they create their own users/workspaces/projects and cle
 | `frontend/src/__tests__/markdown-preview.test.tsx` | 3 | GFM rendering, sanitisation, empty state |
 | `frontend/src/__tests__/ui.test.tsx` | 2 | Shared UI primitives |
 | `frontend/src/__tests__/mermaid.test.tsx` | 3 | Lazy render success/error, stale-render protection |
+| `frontend/src/__tests__/auth-recovery.test.tsx` | 3 | Forgot-password form, incomplete reset link, token-backed reset form |
 
-### 6.3 End-to-end suite (15 tests, 8 specs)
+### 6.3 End-to-end suite (15 journeys + 1 setup, 8 specs)
 
 | Spec | Tests | Journey |
 | --- | --- | --- |
+| `auth.setup.ts` | 1 | Authenticates the demo owner once and saves Playwright `storageState` |
 | `access.spec.ts` | 4 | Unauthenticated redirect, sign-in destinations, keyboard route into content, unknown-email failure |
 | `platform.spec.ts` | 2 | Owner AI status/usage, viewer read-only visibility |
 | `tickets.spec.ts` | 1 | Ticket creation and labelled analysis before review |
-| `ripplemap.spec.ts` | 1 | Simulate, approve and record an immutable plan version |
+| `ripplemap.spec.ts` | 1 | Self-seeds a pending decision through the API, then simulates, approves and records an immutable plan version |
 | `kanban.spec.ts` | 1 | Permission-aware task board columns |
 | `collaboration.spec.ts` | 3 | Document create/edit/preview/delete, discussion reply and solved state, meeting action-item conversion |
 | `docs-diagram.spec.ts` | 1 | Live Mermaid render and inline syntax error |
 | `responsive-failure.spec.ts` | 2 | Mobile navigation, documentation API failure state |
+
+The full suite passed twice consecutively after the authentication fixture and RippleMap fixture changes.
 
 ### 6.4 Manual checks
 
 - Markdown preview and split view at 1440 px and 375 px: no horizontal overflow.
 - Editor and preview heights remain bounded at `60vh` in split mode.
 - Diagram labels render in full after the `.meta-label` rename.
+- Live `GET /api/health` includes a database check and returns the active provider label.
+- Live response headers include `x-request-id`, `Content-Security-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy`; HSTS is emitted when configured.
+- Live notification endpoints return the feed, unread count and eight preference categories with `security` locked.
+- Live forgot-password returns a development `devToken` because the console email backend is active.
 - Existing user-created document **“Payment Release and Record system”** is preserved in the running database. Do not run `npm run db:seed` unless a destructive reset is intended.
 
 ---
@@ -418,6 +455,8 @@ The suites are hermetic: they create their own users/workspaces/projects and cle
 - Backend and frontend are running on ports 4000 and 5173.
 - PostgreSQL container `miraiwerk-db` is healthy on port 55434.
 - AI status reports Gemini (`gemini-3.5-flash-lite`) as the configured provider; deterministic fallback remains available and labelled.
+- Development email uses Django's console backend, so transactional messages print to the API log and password-reset responses include `devToken`. Production requires a real email backend and never returns the token.
+- Notifications and preferences are live; the workspace currently has no unread notifications until an event or `notify_reminders` run creates one.
 - Demo identities:
 
   | User | Email | Workspace role | Can do |
@@ -435,26 +474,28 @@ The suites are hermetic: they create their own users/workspaces/projects and cle
 
 The core product is complete enough for a demo. The remaining work is grouped by priority; nothing below is claimed as finished.
 
-### 8.1 Production hardening (highest priority)
+### 8.1 Production hardening — Phase 1 complete, operational gaps remain
 
-| Area | Current state | Remaining work |
+Phase 1 is implemented and tested. The table separates what now ships from what still needs an operator or infrastructure decision.
+
+| Area | Implemented | Remaining work |
 | --- | --- | --- |
-| Secrets | Development fallback secrets in `JWT_SECRET` / `DJANGO_SECRET_KEY` | Require strong secrets in production; remove fallbacks; use a secret manager |
-| Hosts and transport | `ALLOWED_HOSTS=["*"]`, HTTP by default | Restrict hosts, enforce HTTPS, HSTS, secure cookies, trusted proxy configuration |
-| Rate limiting | None | Login/refresh/password-reset throttling, account lockout or backoff, per-IP and per-account limits |
-| Email | Reset tokens generated; `devToken` returned in development | SMTP/provider transport, reset email template, invitation email, delivery failure handling |
-| Observability | Basic logs and `ai_calls` telemetry | Structured request logs, correlation IDs, metrics, tracing, error reporting, health checks that include the database |
-| Backups and retention | No automated policy | PostgreSQL backup/restore runbook, retention policy, migration rollback plan |
-| Security headers | `nosniff` and `Referrer-Policy` | CSP, HSTS, frame-ancestors, permissions policy |
-| CI/CD | Local commands only | Automated typecheck/tests/build/E2E, dependency and container scanning, migration checks |
-| Task execution | AI calls run synchronously inside requests | Background jobs/queue for long model calls, retries and progress reporting |
-| Audit guarantees | Append-only by convention | Database-level immutability/retention guarantees and exportable legal archive |
+| Secrets | Production startup fails on missing, documented or short `JWT_SECRET` / `DJANGO_SECRET_KEY` | Secret-manager integration and documented key rotation |
+| Hosts and transport | Explicit `ALLOWED_HOSTS`, CORS allowlist, secure cookies, HTTPS redirect, HSTS, trusted proxy support and FastAPI trusted-host middleware in production | CDN/WAF configuration and deployment-specific proxy tuning |
+| Rate limiting | PostgreSQL-backed fixed windows for login, registration, password reset, refresh and AI workflows; per-account and per-IP scopes; `429` with `retryAfter` | Bot/CAPTCHA strategy and adaptive limits if traffic warrants it |
+| Email | SMTP/SES-compatible Django backend, six transactional templates, delivery log; production rejects the console backend | Provider bounce/complaint webhooks, retry policy and digest scheduling |
+| Observability | Request correlation IDs, structured security audit, AI telemetry, database-checking health endpoint | Log aggregation, metrics, tracing, Sentry/OpenTelemetry and alerting |
+| Backups and retention | Migration history and append-only audit triggers | PostgreSQL backup/restore runbook, retention policy, legal archive and migration rollback rehearsal |
+| Security headers | CSP, HSTS when enabled, `nosniff`, frame denial, referrer and permissions policy | CSP review once third-party assets are introduced |
+| CI/CD | Local typecheck, backend/frontend tests, build and Playwright journeys | GitHub Actions, dependency/container scanning, migration checks and coverage thresholds |
+| Task execution | Deterministic and AI work runs inside the request with bounded timeouts and quotas | Background jobs/queue for long model calls, retries and progress reporting |
+| Audit guarantees | PostgreSQL triggers reject update/delete on all three audit tables; admin is view-only | Exportable legal archive and retention automation |
 
 ### 8.2 Product modules and features still to build
 
 | Module | Current state | Remaining features |
 | --- | --- | --- |
-| **Notifications** | None | In-app notification centre, email digests, assignment/mention/decision/due-date alerts, read state and preferences |
+| **Notifications** | In-app centre, per-category preferences, transactional email, delivery log and idempotent reminders | Digest scheduling (daily/weekly), provider bounce/complaint handling, push/mobile notifications and per-project overrides |
 | **Global search** | Project/module picker only | Full-text search across projects, tasks, tickets, documents, meetings and discussions, with filters and saved searches |
 | **Document versioning** | Documents have `createdAt`/`updatedAt` only | Revision history, diff/restore, named versions, comments/mentions, review approvals and an audit of content changes |
 | **Document organisation** | Flat workspace list grouped into notes/diagrams | Folders/spaces, tags, pinned/favourites, drag-and-drop ordering, templates |
@@ -465,7 +506,7 @@ The core product is complete enough for a demo. The remaining work is grouped by
 | **Reports and analytics** | Portfolio overview and audit export | Delivery/velocity/cycle-time reports, decision lead time, AI quality/cost dashboards, custom date ranges, scheduled exports |
 | **Plan and roadmap** | Generated plans, task board, roadmap, dependencies | Drag-and-drop rescheduling, baselines, what-if scenarios beyond RippleMap, capacity-aware planning, calendar export |
 | **Code workspace** | Honest deferred boundary page | Repository provider (GitHub App/OAuth), repo scoping, commit/PR linking, webhook verification, secret handling, code-to-task traceability |
-| **AI provider coverage** | Gemini + labelled deterministic rules; Meta reported but not implemented | Meta Model API adapter in Python, provider routing policy, per-workspace budgets/quotas, cost caps, prompt/version registry, human feedback capture |
+| **AI provider coverage** | Gemini + labelled deterministic rules; Meta reported but not implemented | Meta Model API adapter in Python, provider routing policy, per-workspace budgets/cost caps, prompt/version registry, human feedback capture |
 | **AI evaluation** | 40-case labelled data/report in git history only | Port the harness to Python, run it against the deterministic rules, publish regression reports and gate changes on them |
 | **Assistant coverage** | Document drafts, meeting summaries, ticket/plan analysis | Project Q&A over plan context, decision explanations, risk detection, suggested next actions |
 | **Enterprise administration** | Organization/workspace roles, Django admin | SSO/SAML/OIDC, SCIM provisioning, custom roles, billing/subscription, data residency and retention controls |
@@ -490,34 +531,34 @@ These remain explicit product boundaries, not hidden gaps. The code-workspace pa
 ### 8.4 Known limitations
 
 - **Synchronous AI calls.** A slow provider request occupies an HTTP worker; there is no queue or streaming progress.
-- **Single-process demo posture.** The ASGI app runs as one Uvicorn process; there is no horizontal-scaling or session-affinity design yet.
-- **No production email.** Password reset works only through the development `devToken` path.
+- **Single-process demo posture.** The ASGI app runs as one Uvicorn process; rate limits and notifications are database-backed, but there is no horizontal-scaling or session-affinity design yet.
+- **Email is configuration-complete but not provider-tested.** SMTP/SES-compatible delivery, templates and a delivery log exist; real bounce/complaint handling and retry policy are not implemented. Development still uses the console backend and returns `devToken`.
 - **No document revisions.** Plan versions are immutable, but documents themselves do not yet have revision history.
 - **No full-text search.** The shell search covers projects and navigation, not document or ticket content.
 - **No file uploads or exports** beyond the audit CSV.
 - **Bundle size.** Mermaid's optional diagram engines are lazy-loaded but still large (the ELK chunk is ~1.5 MB before gzip); further code-splitting and an explicit chunk budget are pending.
-- **The evaluation benchmark is not running in CI.** The rules are tested through 45 backend tests, but the 40-case labelled benchmark needs porting.
+- **The evaluation benchmark is not running in CI.** The rules are tested through 55 backend tests, but the 40-case labelled benchmark needs porting.
 - **The Meta provider is configuration-only.** Selecting it produces a labelled deterministic fallback.
-- **No notification or rate-limiting layer.** Security audit records events, but there is no proactive alerting.
+- **Reminders need an external trigger.** `notify_reminders` is idempotent and safe to run daily, but no scheduler is bundled; cron or a future Celery beat must invoke it.
 - **Migrating production data from the Express schema** has not been rehearsed against a real dataset; the Python schema is verified against the seeded and test scenarios.
 
 ---
 
 ## 9. Recommended next sequence
 
-1. **Production baseline** — secrets, host allowlist, HTTPS/cookies, CORS, CSP/HSTS, rate limiting and request logging.
-2. **Email and notifications** — password reset, invitations, decision/assignment alerts.
-3. **Evaluation harness** — port the 40-case benchmark, publish a Python report and wire it into CI.
-4. **Document versioning and search** — revisions/diffs, comments, attachments, then full-text search.
-5. **Provider and cost controls** — Meta adapter, quotas, budgets and AI usage dashboards.
-6. **Repository integration** — GitHub App/OAuth, webhooks and commit/PR-to-task links, behind explicit consent.
-7. **Enterprise groundwork** — SSO/SCIM, custom roles, retention and backup automation.
-8. **Scale work** — background job queue, streaming AI responses and load testing.
+Phase 1 (production security) and Phase 2 (email and notifications) are implemented. The remaining roadmap continues in order; each step should keep its acceptance criteria and tests green before the next begins.
+
+1. **Evaluation and AI quality (Phase 3, next)** — port the 40-case benchmark, assert provenance labels, add project-aware Q&A, prompt/version registry and a quality report.
+2. **AI cost controls and dashboards** — token/cost budgets per workspace, usage dashboards, provider routing and the Meta adapter in Python.
+3. **Document lifecycle** — revisions/diffs, comments, attachments and export, followed by full-text search.
+4. **Repository integration** — GitHub App/OAuth, webhooks and commit/PR-to-task links, behind explicit consent.
+5. **Enterprise groundwork** — SSO/SCIM, custom roles, retention, backup automation and CI/CD with scanning.
+6. **Scale work** — background job queue, streaming AI responses, load testing and observability integrations.
 
 ---
 
 ## 10. Bottom line
 
-The rebuild is complete and the demo is coherent: the decision loop is deterministic where it must be, the AI is labelled where it is used, and human approval remains the only way a plan changes. The documentation workbench now matches the quality of the rest of the product, with a sanitised Markdown preview and a responsive Mermaid workbench.
+The rebuild is complete and the demo is coherent: the decision loop is deterministic where it must be, the AI is labelled where it is used, and human approval remains the only way a plan changes. Phase 1 production security and Phase 2 email/notifications now ship with tests, and the documentation workbench matches the quality of the rest of the product.
 
-What remains is not “finish the app”; it is production hardening, notifications and search, document lifecycle features, provider/evaluation coverage, and the deliberately deferred repository and enterprise integrations.
+What remains is not “finish the app”; it is AI evaluation and cost controls, document lifecycle and search, provider coverage, and the deliberately deferred repository and enterprise integrations. The next phase is the 40-case benchmark plus project-aware Q&A; nothing after that should be started until its predecessor’s acceptance criteria pass.

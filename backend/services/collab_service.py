@@ -9,7 +9,7 @@ from django.db import connection, transaction
 
 from core.common import iso_datetime, new_id
 from core.errors import ApiError
-from services import authz, task_service
+from services import authz, notification_service, task_service
 
 
 def _fetchall_dicts(cursor) -> list[dict]:
@@ -246,7 +246,9 @@ def create_meeting(user_id: str, workspace_id: str, input_data: dict) -> dict:
             ],
         )
     meetings = list_meetings(user_id, workspace_id, project_id)
-    return next(meeting for meeting in meetings if meeting["id"] == meeting_id)
+    result = next(meeting for meeting in meetings if meeting["id"] == meeting_id)
+    notification_service.notify_meeting_scheduled(user_id, meeting_id)
+    return result
 
 
 def _parse_datetime(value) -> datetime | None:
@@ -306,7 +308,10 @@ def update_meeting(user_id: str, meeting_id: str, input_data: dict) -> dict:
             ],
         )
     meetings = list_meetings(user_id, existing["workspace_id"], existing["project_id"])
-    return next(meeting for meeting in meetings if meeting["id"] == meeting_id)
+    result = next(meeting for meeting in meetings if meeting["id"] == meeting_id)
+    if scheduled_at_provided:
+        notification_service.notify_meeting_scheduled(user_id, meeting_id)
+    return result
 
 
 def convert_action_items_to_tasks(user_id: str, meeting_id: str, project_id: str) -> list[dict]:
@@ -464,6 +469,13 @@ def create_thread(user_id: str, workspace_id: str, input_data: dict) -> dict:
                 user_id,
             ],
         )
+    notification_service.notify_mentions(
+        actor_id=user_id,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        thread_id=thread_id,
+        body=input_data.get("body") or "",
+    )
     return get_thread(user_id, thread_id)
 
 
@@ -484,6 +496,13 @@ def reply_to_thread(user_id: str, thread_id: str, body: str) -> dict:
         cursor.execute(
             "UPDATE forum_threads SET updated_at = now() WHERE id = %s", [thread_id]
         )
+    notification_service.notify_mentions(
+        actor_id=user_id,
+        workspace_id=thread["workspace_id"],
+        project_id=thread["project_id"],
+        thread_id=thread_id,
+        body=body,
+    )
     return get_thread(user_id, thread_id)
 
 

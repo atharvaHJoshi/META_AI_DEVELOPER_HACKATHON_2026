@@ -17,7 +17,7 @@ from core.security import (
     sign_access_token,
 )
 from platform_app.passwords import hash_password, password_problem, verify_password
-from services import authz
+from services import authz, email_service
 from services.org_service import ensure_personal_workspace, list_organizations, list_workspaces
 
 
@@ -38,7 +38,11 @@ def request_meta(request) -> dict:
     user_agent = request.headers.get("user-agent", "")[:400]
     forwarded = request.headers.get("x-forwarded-for")
     ip = (forwarded.split(",")[0].strip() if forwarded else (request.client.host if request.client else None))
-    return {"userAgent": user_agent, "ip": ip}
+    return {
+        "userAgent": user_agent,
+        "ip": ip,
+        "requestId": getattr(request.state, "request_id", None),
+    }
 
 
 def record_security_audit(
@@ -52,8 +56,9 @@ def record_security_audit(
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO security_audit (id, user_id, action, outcome, ip_address, user_agent, metadata)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO security_audit
+                  (id, user_id, action, outcome, ip_address, user_agent, request_id, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     new_id("sec"),
@@ -62,6 +67,7 @@ def record_security_audit(
                     outcome,
                     (meta or {}).get("ip"),
                     (meta or {}).get("userAgent", ""),
+                    (meta or {}).get("requestId"),
                     json.dumps(metadata or {}),
                 ],
             )
@@ -359,6 +365,7 @@ def forgot_password(email: str, meta: dict) -> dict:
             [new_id("ott"), user["id"], token_hash, expires_at],
         )
     record_security_audit(user["id"], "auth.password_forgot", "success", meta)
+    email_service.send_password_reset(user, raw)
     dev_token = raw if not config.IS_PRODUCTION else None
     if dev_token:
         import logging

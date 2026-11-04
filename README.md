@@ -42,14 +42,29 @@ Brief ──► Generated plan ──► Ticket intake ──► AI analysis
 ### Delivery platform
 - Multi-tenant organizations and workspaces with role-based access (`owner`, `admin`, `manager`, `member`, `viewer`).
 - Email/password authentication using Argon2id, short-lived JWT access tokens and rotating refresh tokens in an httpOnly cookie.
-- Optional Meta OAuth sign-in, session listing/revocation, password reset and a seeded demo-login path.
+- Optional Meta OAuth sign-in, session listing/revocation, password reset, and a seeded demo-login path that production refuses to enable.
 - Projects, teams, task board (Kanban), task dependencies, milestones, roadmap and workload views.
 - Documentation records, meeting scheduling with AI summaries and action-item conversion, discussion threads with replies and solved state.
 - Markdown notes with `Write / Preview / Split` tabs, a sanitised GFM renderer and an empty-state preview; Mermaid diagram records with a responsive split workbench, lazy-loaded live rendering, inline syntax errors and AI-assisted drafts.
 - Workspace audit trail, organization management, settings and a read-only code-workspace surface.
 
+### Security and operations
+- Production configuration fails closed: strong secrets, explicit hosts and origins, secure cookies, HTTPS redirect, HSTS and a real email backend are required before the API starts.
+- PostgreSQL-backed fixed-window rate limits for login (per account and IP), registration, password reset, refresh and AI workflows, with `429` and `retryAfter` responses.
+- Request correlation IDs on every API response and structured security audit records linked to the request.
+- CSP, HSTS, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy` headers.
+- PostgreSQL triggers make the security, project and decision audit tables append-only; the Django admin exposes them read-only.
+- Database-checking health endpoint and synchronous AI quotas per user and workspace.
+
+### Notifications and email
+- Workspace-scoped notification centre with unread/all tabs, mark-read, mark-all-read, pagination and deep links.
+- Backend events create notifications for task assignment, ticket intake, decision proposals/outcomes, meeting scheduling, discussion @mentions and approaching milestones.
+- Per-category preferences across eight categories with independent in-app and email switches; security notifications cannot be disabled.
+- SMTP/SES-compatible transactional email for password reset, invitations, task assignment, decision outcomes, meeting invitations and generic alerts, with a delivery log.
+- `notify_reminders` creates idempotent due-soon, overdue and milestone reminders for cron or a future scheduler.
+
 ### AI and trust
-- Google Gemini adapter by default, with an optional Meta Model API adapter — both use JSON-schema structured responses, bounded retries, timeouts and read-only tools.
+- Google Gemini adapter by default, using JSON-schema structured responses, bounded retries, timeouts and read-only tools.
 - A labelled deterministic mode (`miraiwerk-rules-v1`) whenever no provider key is configured; it is never presented as a model result.
 - Explicit `degraded` labelling when a configured model call fails and fallback is enabled.
 - A 40-case labelled evaluation benchmark with generated reports. The data and report are preserved in git history from the TypeScript AIML package; porting the harness to the Python rules is tracked in the progress report.
@@ -60,12 +75,13 @@ Brief ──► Generated plan ──► Ticket intake ──► AI analysis
 | --- | --- |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, React Router, Mermaid |
 | Backend | Python 3.12+, Django 6 (ORM, migrations, admin) + FastAPI, Pydantic |
-| AIML | `backend/aiml` — Gemini + deterministic rules + policy (Meta provider not shipped in the Python build) |
+| AIML | `backend/aiml` — Gemini + labelled deterministic rules + policy (Meta provider is configuration-only in the Python build) |
 | Data | PostgreSQL 16 |
 | Shared contracts | `packages/schemas` (Zod runtime contracts for the frontend) |
 | Simulation | `backend/ripplemap` (dependency scheduling and RippleMap scenario diffing) |
-| AI | Gemini by default, Meta Model API optional, labelled deterministic fallback |
-| Tests | pytest, TestClient, Playwright |
+| AI | Gemini by default, labelled deterministic fallback; Meta selection degrades safely |
+| Security | Django email/auth primitives, PostgreSQL rate limits and append-only audit triggers |
+| Tests | pytest, TestClient, Vitest, Playwright |
 | Local infrastructure | Docker Compose (`miraiwerk-db` on port **55434**) |
 
 ## Architecture
@@ -78,11 +94,11 @@ backend/ (ASGI app on port 4000)
   ├─ /api        FastAPI — HTTP API, Pydantic validation, JWT auth
   ├─ /admin      Django admin — staff-only operator console
   ├─ platform_app Django models, migrations, ORM, admin registrations
-  ├─ api/        routers + request validation
-  ├─ services/   business logic (auth, projects, tickets, decisions, collab)
+  ├─ api/        routers, request validation, request IDs and security headers
+  ├─ services/   business logic, authorization, rate limits, email and notifications
   ├─ ripplemap/  deterministic graph scheduler and scenario simulator
   ├─ aiml/       Gemini provider, deterministic rules, policy, schemas
-  └─ manage.py   migrate, seed_demo, create_admin
+  └─ manage.py   migrate, seed_demo, create_admin, notify_reminders
                                        │
                                        ▼
                                  PostgreSQL
@@ -96,13 +112,13 @@ The backend is a modular monolith: one deployable ASGI app serving both the API 
 .
 ├── frontend/                 React workspace, RippleMap, delivery and collaboration UI
 ├── backend/                  Python backend — Django (ORM/admin/migrations) + FastAPI API
-│   ├── platform_app/         models, admin, password hashing, `seed_demo` command
-│   ├── api/                  FastAPI app, routers, Pydantic request validation
-│   ├── services/             business logic (auth, projects, tickets, decisions, collab)
+│   ├── platform_app/         models, admin, password hashing, `seed_demo`, `notify_reminders`
+│   ├── api/                  FastAPI app, routers, Pydantic validation, security middleware
+│   ├── services/             business logic, rate limits, email and notifications
 │   ├── ripplemap/            deterministic scheduler and scenario simulator
 │   ├── aiml/                 Gemini provider, deterministic rules, policy
 │   ├── miraiwerk/            ASGI composition (FastAPI + Django admin)
-│   └── tests/                pytest: RippleMap, API and Django admin tests
+│   └── tests/                pytest: RippleMap, API, security/notifications and Django admin tests
 ├── packages/
 │   └── schemas/              Shared Zod contracts and TypeScript types (frontend)
 ├── e2e/                      Playwright browser journeys
@@ -176,6 +192,45 @@ Demo password for all seeded accounts: `Miraiwerk!2026`.
 
 The seed creates a commerce relaunch project with five tickets: one approved decision that already produced plan version 2, plus four pending decisions covering an incident, a feature request, a vague report, and a duplicate-looking ticket with a different root cause. It also seeds an organization, two workspaces, a team, documents, a meeting and discussion threads.
 
+## Production configuration
+
+`APP_ENV=production` makes the API validate its configuration before serving traffic. It refuses to start when:
+
+- `JWT_SECRET` or `DJANGO_SECRET_KEY` is missing, a documented development default, or shorter than 32 characters.
+- `ALLOWED_HOSTS` is missing or contains a wildcard.
+- No `FRONTEND_ORIGINS`/`WEB_ORIGIN` is configured for CORS.
+- `COOKIE_SECURE` or `SECURE_SSL_REDIRECT` is disabled.
+- `EMAIL_BACKEND` is Django's console backend.
+- `AUTH_ALLOW_DEMO` is enabled.
+
+A minimal production environment looks like:
+
+```dotenv
+APP_ENV=production
+DJANGO_SECRET_KEY=<64+ random characters>
+JWT_SECRET=<64+ random characters>
+ALLOWED_HOSTS=app.example.com
+FRONTEND_ORIGINS=https://app.example.com
+CSRF_TRUSTED_ORIGINS=https://app.example.com
+COOKIE_SECURE=true
+SECURE_SSL_REDIRECT=true
+SECURE_HSTS_SECONDS=31536000
+TRUST_X_FORWARDED_PROTO=true
+AUTH_ALLOW_DEMO=false
+
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.example.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=...
+EMAIL_HOST_PASSWORD=...
+EMAIL_USE_TLS=true
+DEFAULT_FROM_EMAIL=MIRAIWERK AI <no-reply@example.com>
+```
+
+Development defaults to Django's console email backend, so reset messages print to the API log and the forgot-password response includes `devToken`. Production requires a real backend and never returns the token. Rate-limit thresholds are configurable through `RATE_LIMIT_*` variables; see `backend/core/config.py` for the full list.
+
+`python manage.py notify_reminders` should run daily from cron or a scheduler. It is idempotent per day through notification dedupe keys.
+
 ## Main routes
 
 | Route | Page |
@@ -196,7 +251,9 @@ The seed creates a commerce relaunch project with five tickets: one approved dec
 | `/meetings` | Meetings and action items |
 | `/discussions` | Discussion threads |
 | `/code` | Code workspace surface |
-| `/organization`, `/roles`, `/audit`, `/settings` | Workspace administration |
+| `/forgot-password`, `/reset-password` | Password recovery |
+| `/settings` | Profile, notification preferences, sessions and AI status |
+| `/organization`, `/roles`, `/audit` | Workspace administration |
 
 ## Commands
 
@@ -258,7 +315,7 @@ The browser never receives the key. `VITE_*` variables are public by definition 
 - **Stale protection.** If the plan advances after a proposal is computed, siblings are marked stale and approval returns `409`. Re-analyse the ticket to regenerate the decision.
 - **Human approval.** Only `owner` and `pm` (workspace `owner`/`admin`/`manager`) may approve. Member/viewer attempts return `403`.
 - **Versioned outcomes.** Accept/split create a new plan snapshot and `plan.versioned` audit. Defer/duplicate/clarify preserve the plan and record the decision outcome.
-- **Append-only history.** Decision and project audit events are exposed through the history page and API.
+- **Append-only history.** Decision and project audit events are exposed through the history page and API, and PostgreSQL triggers reject updates or deletes on all audit tables.
 
 Read the full contract in [`docs/evidence-contract.md`](docs/evidence-contract.md).
 
@@ -272,11 +329,11 @@ npm run test:e2e         # Playwright journeys (starts its own dev servers)
 ```
 
 - `backend/ripplemap`: scheduling, cycle detection, scenario validity, milestone deltas, critical path, deterministic hashing — verified against the original TypeScript engine output.
-- `backend`: isolated PostgreSQL integration tests for project creation, ticket analysis, simulation, approval versioning, stale rejection, scenario requirements, defer semantics, RBAC and validation errors.
-- `frontend`: formatting helpers, shared UI primitives and the Markdown preview renderer.
-- `e2e`: sign-in/access, viewer permissions, RippleMap approval, ticket intake and analysis, Kanban, documentation, discussions, meetings, responsive navigation and API failure states.
+- `backend` (55 tests): isolated PostgreSQL integration tests for project creation, ticket analysis, simulation, approval versioning, stale rejection, scenario requirements, defer semantics, RBAC and validation errors; security tests cover production config, shared rate limits, append-only audit triggers, email delivery, notifications and preferences.
+- `frontend` (14 tests): formatting helpers, shared UI primitives, the Markdown preview renderer, Mermaid rendering and password-recovery forms.
+- `e2e` (15 journeys plus one authenticated setup): sign-in/access, viewer permissions, RippleMap approval, ticket intake and analysis, Kanban, documentation, discussions, meetings, responsive navigation and API failure states.
 
-The backend integration suite requires the database container and Django migrations to be running.
+The backend integration suite requires the database container and Django migrations to be running. Use `RATE_LIMIT_ENABLED=false` when running the suite repeatedly against one database so login attempts do not trip the production limits.
 
 ## Deliberately out of scope
 

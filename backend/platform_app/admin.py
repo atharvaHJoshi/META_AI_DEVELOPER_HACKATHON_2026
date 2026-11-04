@@ -117,12 +117,21 @@ class OneTimeTokenAdmin(admin.ModelAdmin):
 
 @admin.register(models.SecurityAudit)
 class SecurityAuditAdmin(admin.ModelAdmin):
-    list_display = ("created_at", "action", "outcome", "user", "ip_address")
+    list_display = ("created_at", "action", "outcome", "user", "ip_address", "request_id")
     list_filter = ("outcome", "action")
-    search_fields = ("action", "user__email", "ip_address")
+    search_fields = ("action", "user__email", "ip_address", "request_id")
     raw_id_fields = ("user",)
-    readonly_fields = ("created_at", "metadata")
+    readonly_fields = ("created_at", "metadata", "request_id")
     date_hierarchy = "created_at"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(models.Project)
@@ -256,6 +265,15 @@ class DecisionAuditAdmin(admin.ModelAdmin):
     readonly_fields = ("timestamp", "before_json", "after_json")
     date_hierarchy = "timestamp"
 
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(models.AuditEvent)
 class AuditEventAdmin(admin.ModelAdmin):
@@ -266,10 +284,50 @@ class AuditEventAdmin(admin.ModelAdmin):
     readonly_fields = ("timestamp", "before_json", "after_json")
     date_hierarchy = "timestamp"
 
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(models.Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "recipient", "notification_type", "title", "is_read", "workspace")
+    list_filter = ("notification_type", "is_read")
+    search_fields = ("title", "message", "recipient__email", "entity_id")
+    raw_id_fields = ("recipient", "workspace", "project")
+    readonly_fields = ("created_at", "read_at")
+
+
+@admin.register(models.NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display = ("user", "category", "in_app", "email")
+    list_filter = ("category", "in_app", "email")
+    search_fields = ("user__email", "user__name")
+    raw_id_fields = ("user",)
+
+
+@admin.register(models.EmailDelivery)
+class EmailDeliveryAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "template", "recipient", "status")
+    list_filter = ("status", "template")
+    search_fields = ("recipient", "template", "error")
+    readonly_fields = ("created_at", "recipient", "template", "status", "error")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(models.AiCall)
 class AiCallAdmin(admin.ModelAdmin):
-    list_display = ("created_at", "workflow", "provider", "model", "success", "degraded", "duration_ms")
+    list_display = ("created_at", "workflow", "provider", "model", "user_id", "success", "degraded", "duration_ms")
     list_filter = ("workflow", "provider", "success", "degraded")
     search_fields = ("model", "error")
     raw_id_fields = ("project",)

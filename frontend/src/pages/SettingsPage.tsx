@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Activity,
+  Bell,
   CheckCircle2,
   Cpu,
   KeyRound,
@@ -13,7 +14,7 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
-import type { AuthSession } from "@miraiwerk/schemas";
+import type { AuthSession, NotificationPreference, NotificationPreferenceList } from "@miraiwerk/schemas";
 import { useAuth } from "../context/AuthContext";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useToast } from "../context/ToastContext";
@@ -27,6 +28,7 @@ import {
   Button,
   Card,
   CardHeader,
+  Checkbox,
   EmptyState,
   Field,
   Input,
@@ -62,6 +64,17 @@ interface Usage {
   }>;
 }
 
+const NOTIFICATION_CATEGORY_HINTS: Record<string, string> = {
+  tasks: "Assignments, due-soon work and overdue tasks.",
+  tickets: "New intake that needs triage.",
+  decisions: "Proposals ready for review and recorded outcomes.",
+  meetings: "Scheduled meetings and agenda updates.",
+  discussions: "Replies and @mentions in workspace discussions.",
+  milestones: "Approaching milestone targets and release gates.",
+  digests: "Periodic workspace summaries.",
+  security: "Sign-in, password and account security events.",
+};
+
 export function SettingsPage() {
   const { user, updateProfile, logout } = useAuth();
   const { activeWorkspace, activeOrganization, aiMode, role } = useWorkspace();
@@ -77,6 +90,38 @@ export function SettingsPage() {
   const usage = useAsync<Usage>(() => api.ai.usage(workspaceId), [workspaceId]);
   const sessions = useAsync<{ sessions: AuthSession[] }>(() => api.auth.sessions(), []);
   const health = useAsync(() => api.health(), []);
+  const notificationPreferences = useAsync<NotificationPreferenceList>(
+    () => api.notifications.preferences(),
+    [],
+  );
+  const [preferenceBusy, setPreferenceBusy] = useState<string | null>(null);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+
+  const updatePreference = async (
+    preference: NotificationPreference,
+    channel: "inApp" | "email",
+    checked: boolean,
+  ) => {
+    setPreferenceBusy(`${preference.category}:${channel}`);
+    setPreferenceError(null);
+    try {
+      await api.notifications.updatePreferences([
+        {
+          category: preference.category,
+          inApp: channel === "inApp" ? checked : preference.inApp,
+          email: channel === "email" ? checked : preference.email,
+        },
+      ]);
+      await notificationPreferences.reload();
+      toast("Notification preference saved.", "success");
+    } catch (cause) {
+      setPreferenceError(
+        cause instanceof ApiError ? cause.message : "The notification preference could not be saved.",
+      );
+    } finally {
+      setPreferenceBusy(null);
+    }
+  };
 
   useEffect(() => {
     setProfile({ name: user?.name ?? "", title: user?.title ?? "", avatarColor: user?.avatarColor ?? "#496A91" });
@@ -336,11 +381,70 @@ export function SettingsPage() {
           </Card>
 
           <Card>
+            <CardHeader
+              title="Notifications"
+              description="Choose which events create in-app alerts and email. Security alerts are always enabled."
+              actions={<Badge tone="primary" dot>Per account</Badge>}
+            />
+            {notificationPreferences.loading ? (
+              <LoadingBlock label="Loading notification preferences" />
+            ) : notificationPreferences.error ? (
+              <p className="px-5 py-4 text-xs text-danger-600">{notificationPreferences.error}</p>
+            ) : (notificationPreferences.data?.preferences.length ?? 0) === 0 ? (
+              <EmptyState icon={Bell} title="No categories available" compact />
+            ) : (
+              <>
+                {preferenceError && (
+                  <div className="border-b border-line px-5 py-3">
+                    <Alert tone="danger">{preferenceError}</Alert>
+                  </div>
+                )}
+                <ul className="divide-y divide-line-faint">
+                  {notificationPreferences.data?.preferences.map((preference) => (
+                    <li key={preference.category} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-xs font-semibold text-ink">{titleCase(preference.category)}</p>
+                          {preference.locked && <Badge tone="sage">Always on</Badge>}
+                        </div>
+                        <p className="mt-0.5 text-[10px] leading-4 text-ink-faint">
+                          {NOTIFICATION_CATEGORY_HINTS[preference.category] ?? "Workspace activity updates."}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <Checkbox
+                          label="In-app"
+                          checked={preference.inApp}
+                          disabled={preference.locked || preferenceBusy !== null}
+                          onChange={(event) =>
+                            void updatePreference(preference, "inApp", event.target.checked)
+                          }
+                        />
+                        <Checkbox
+                          label="Email"
+                          checked={preference.email}
+                          disabled={preference.locked || preferenceBusy !== null}
+                          onChange={(event) =>
+                            void updatePreference(preference, "email", event.target.checked)
+                          }
+                        />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </Card>
+
+          <Card>
             <CardHeader title="Security and data" description="What this build does and does not implement." />
             <ul className="space-y-2 p-5 text-[11px] leading-5 text-ink-muted">
               <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-500" /> Passwords use Argon2id with a scrypt fallback; refresh tokens are opaque, hashed and rotated.</li>
               <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-500" /> Tenant access is checked server-side against organization, workspace and project membership.</li>
-              <li className="flex gap-2"><ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-500" /> No notification-preference or email-delivery endpoint exists in this build; no non-functional preference controls are shown.</li>
+              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-500" /> Shared PostgreSQL fixed-window limits cover sign-in, registration, password reset, session refresh and AI workflows.</li>
+              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-500" /> Notification preferences and transactional email delivery are implemented; delivery attempts are recorded for operators.</li>
+              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sage-500" /> Security, project and decision audit rows are append-only at the database level; the admin console is read-only for them.</li>
+              <li className="flex gap-2"><ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-500" /> Production startup rejects development secrets, wildcard hosts, insecure cookies, disabled HTTPS redirects and the console email backend.</li>
               <li className="flex gap-2"><KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary-500" /> AI and Meta keys belong in server environment configuration, never browser storage.</li>
             </ul>
             <div className="border-t border-line px-5 py-3">

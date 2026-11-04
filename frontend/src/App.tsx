@@ -36,7 +36,7 @@ import { TasksPage } from "./pages/TasksPage";
 import { TeamsPage } from "./pages/TeamsPage";
 import { TicketDetailPage } from "./pages/TicketDetailPage";
 import { TicketsPage } from "./pages/TicketsPage";
-import { LoginPage, OAuthCallbackPage, RegisterPage } from "./pages/auth/AuthPages";
+import { LoginPage, ForgotPasswordPage, OAuthCallbackPage, RegisterPage, ResetPasswordPage } from "./pages/auth/AuthPages";
 
 function FullPageLoader({ label = "Restoring your workspace" }: { label?: string }) {
   return (
@@ -153,6 +153,8 @@ export function App() {
           <ScrollToTop />
           <Routes>
             <Route path="/auth/callback" element={<OAuthCallbackPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route element={<PublicOnly />}>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />

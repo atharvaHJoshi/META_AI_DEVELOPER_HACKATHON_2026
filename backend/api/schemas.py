@@ -386,6 +386,17 @@ class SolvedInput(StrictModel):
     solved: bool
 
 
+# -------------------------------------------------------- notifications ----
+class NotificationPreferenceInput(StrictModel):
+    category: str = Field(min_length=2, max_length=40)
+    inApp: bool = True
+    email: bool = True
+
+
+class UpdateNotificationPreferencesInput(StrictModel):
+    preferences: list[NotificationPreferenceInput] = Field(min_length=1, max_length=20)
+
+
 # ------------------------------------------------------------------- ai ----
 class DraftDocumentInput(StrictModel):
     workspaceId: str = Field(min_length=1)

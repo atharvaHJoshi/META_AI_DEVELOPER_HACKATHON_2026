@@ -146,6 +146,18 @@ Authorization is enforced server-side on every project- and workspace-scoped ser
 
 `POST /ai/documents/draft` returns Markdown by default. Send `"docType": "diagram"` to request Mermaid source for a diagram document; the deterministic fallback is labelled and still returns valid Mermaid syntax.
 
+### Notifications
+
+All notification endpoints require authentication and an `x-workspace-id` header. Notifications are scoped to the caller's workspace; security notices are always delivered.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/notifications` | Feed (`?status=all\|unread`, `limit` 1–50, `offset`) |
+| `GET` | `/notifications/unread-count` | Unread count for the workspace |
+| `POST` | `/notifications/:id/read` | Mark one notification read |
+| `POST` | `/notifications/read-all` | Mark every notification in the workspace read |
+| `GET` | `/notification-preferences` | Per-category in-app/email preferences |
+| `PATCH` | `/notification-preferences` | Update one or more preferences |
 
 ## Error responses
 
@@ -168,6 +180,7 @@ All errors use one envelope:
 | `404` | `PROJECT_NOT_FOUND` | Project does not exist |
 | `404` | `TICKET_NOT_FOUND` | Ticket does not exist |
 | `404` | `DECISION_NOT_FOUND` | Proposal does not exist |
+| `404` | `NOTIFICATION_NOT_FOUND` | Notification does not exist or belongs to another recipient |
 | `409` | `DECISION_NOT_PENDING` | Proposal is approved, rejected, clarified, stale, or superseded |
 | `409` | `STALE_PROPOSAL` | Plan advanced past the proposal baseline |
 | `409` | `BASELINE_VERSION_MISMATCH` | Simulation request names a baseline other than the proposal's |
@@ -181,6 +194,8 @@ All errors use one envelope:
 | `422` | `NO_DUPLICATE_CANDIDATE` | `duplicate` approval without a candidate on the proposal |
 | `422` | `INVALID_PROPOSED_CHANGE` | A stored change references a missing record |
 | `422` | `INVALID_PLAN_AFTER_APPROVAL` | Applying the change would break the graph |
+| `422` | `INVALID_NOTIFICATION_CATEGORY` | Preference category is unknown or locked |
+| `429` | `RATE_LIMITED` | Fixed-window limit exceeded; `details.retryAfter` gives seconds |
 | `502` | `MODEL_UNAVAILABLE` | Model call failed with fallback disabled |
 | `500` | `INTERNAL_ERROR` | Unexpected server failure |
 
@@ -207,7 +222,7 @@ curl -s http://localhost:4000/api/health
 }
 ```
 
-`ai` is `gemini` or `meta` when that provider is configured, and `deterministic-demo` when no key is present. It is never inferred from a browser value.
+`ai` is `gemini` when the Gemini provider is configured and `deterministic-demo` when no provider key is present. Selecting `AI_PROVIDER=meta` also reports the deterministic fallback in this build; the field is never inferred from a browser value.
 
 ---
 
@@ -869,6 +884,84 @@ For `defer` and `duplicate`, `planVersionNumber` is `null` and the message state
 ```
 
 Sets the proposal to `clarified`, merges the supplied questions with any existing clarifying questions, sets the ticket to `needs_clarification`, and records the decision without touching the plan.
+
+---
+
+## Notifications
+
+### `GET /api/notifications`
+
+Returns the caller's notification feed for the workspace identified by `x-workspace-id`.
+
+| Query | Default | Notes |
+| --- | --- | --- |
+| `status` | `all` | `all` or `unread` |
+| `limit` | `20` | 1–50 |
+| `offset` | `0` | Pagination offset |
+
+```json
+{
+  "notifications": [
+    {
+      "id": "ntf_...",
+      "workspaceId": "ws_...",
+      "projectId": "prj_...",
+      "type": "decision.proposed",
+      "title": "Decision ready: Checkout retry duplicate capture",
+      "message": "An AI proposal and RippleMap impact are ready for human review.",
+      "entityType": "decision",
+      "entityId": "dec_...",
+      "link": "/ripplemap/dec_...",
+      "isRead": false,
+      "createdAt": "2026-11-04T06:45:12.000Z"
+    }
+  ],
+  "unreadCount": 1,
+  "hasMore": false
+}
+```
+
+### `POST /api/notifications/:id/read`
+
+Marks one notification read. Only the recipient can mark it. Returns `{ "ok": true }`; a notification outside the caller's scope returns `404 NOTIFICATION_NOT_FOUND`.
+
+### `POST /api/notifications/read-all`
+
+Marks every unread notification in the workspace read. Returns `{ "ok": true, "updated": 3 }`.
+
+### `GET /api/notification-preferences`
+
+Returns all eight categories with their effective settings. `security` is always `inApp: true`, `email: true` and `locked: true`.
+
+```json
+{
+  "preferences": [
+    { "category": "tasks", "inApp": true, "email": true, "locked": false },
+    { "category": "tickets", "inApp": true, "email": true, "locked": false },
+    { "category": "decisions", "inApp": true, "email": true, "locked": false },
+    { "category": "meetings", "inApp": true, "email": true, "locked": false },
+    { "category": "discussions", "inApp": true, "email": true, "locked": false },
+    { "category": "milestones", "inApp": true, "email": true, "locked": false },
+    { "category": "digests", "inApp": true, "email": true, "locked": false },
+    { "category": "security", "inApp": true, "email": true, "locked": true }
+  ]
+}
+```
+
+### `PATCH /api/notification-preferences`
+
+```json
+{
+  "preferences": [
+    { "category": "meetings", "inApp": true, "email": false },
+    { "category": "digests", "inApp": false, "email": false }
+  ]
+}
+```
+
+At least one and at most twenty preferences per request. Unknown categories return `422 INVALID_NOTIFICATION_CATEGORY`; attempting to change `security` is rejected the same way because it is not in the update allow-list. The response is the full preference list in the same shape as `GET`.
+
+Notification emails are only sent when the category's `email` preference is enabled. Every delivery attempt is recorded in `email_deliveries`; a provider failure is logged and does not fail the originating request.
 
 ---
 

@@ -151,15 +151,16 @@ def record_ai_call(input_data: dict) -> None:
             cursor.execute(
                 """
                 INSERT INTO ai_calls
-                  (id, project_id, workspace_id, organization_id, workflow, provider, model,
+                  (id, project_id, workspace_id, organization_id, user_id, workflow, provider, model,
                    duration_ms, success, degraded, error, usage_json)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     new_id("ai"),
                     input_data.get("projectId"),
                     input_data.get("workspaceId"),
                     input_data.get("organizationId"),
+                    input_data.get("userId"),
                     input_data["workflow"],
                     input_data["provider"],
                     input_data["model"],
@@ -211,12 +212,21 @@ def _deterministic_result(
 
 
 def _record_plan_call(
-    project_id: str | None, result: dict, *, success: bool, degraded: bool,
-    error: str | None, usage,
+    project_id: str | None,
+    result: dict,
+    *,
+    success: bool,
+    degraded: bool,
+    error: str | None,
+    usage,
+    user_id: str | None = None,
+    workspace_id: str | None = None,
 ) -> None:
     record_ai_call(
         {
             "projectId": project_id,
+            "workspaceId": workspace_id,
+            "userId": user_id,
             "workflow": "plan_generation",
             "provider": result["provider"],
             "model": result["model"],
@@ -229,11 +239,36 @@ def _record_plan_call(
     )
 
 
-def generate_plan(input_data: dict, project_id: str | None) -> dict:
+def generate_plan(
+    input_data: dict,
+    project_id: str | None,
+    *,
+    user_id: str | None = None,
+    workspace_id: str | None = None,
+) -> dict:
     plan_input = _plan_input(input_data)
     started = time.time()
     ai = config.ai_mode()
     provider = ai["provider"]
+
+    def record(
+        result: dict,
+        *,
+        success: bool,
+        degraded: bool,
+        error: str | None = None,
+        usage=None,
+    ) -> None:
+        _record_plan_call(
+            project_id,
+            result,
+            success=success,
+            degraded=degraded,
+            error=error,
+            usage=usage,
+            user_id=user_id,
+            workspace_id=workspace_id,
+        )
 
     if provider == "deterministic-demo":
         result = _deterministic_result(
@@ -245,7 +280,7 @@ def generate_plan(input_data: dict, project_id: str | None) -> dict:
             ),
             latency_ms=max(1, int((time.time() - started) * 1000)),
         )
-        _record_plan_call(project_id, result, success=True, degraded=False, error=None, usage=None)
+        record(result, success=True, degraded=False)
         return result
 
     provider_label = "Gemini" if provider == "gemini" else "Meta Model API"
@@ -261,9 +296,11 @@ def generate_plan(input_data: dict, project_id: str | None) -> dict:
             ),
             latency_ms=max(1, int((time.time() - started) * 1000)),
         )
-        _record_plan_call(
-            project_id, fallback, success=True, degraded=True,
-            error="Meta provider unavailable in Python backend", usage=None,
+        record(
+            fallback,
+            success=True,
+            degraded=True,
+            error="Meta provider unavailable in Python backend",
         )
         return fallback
 
@@ -274,9 +311,12 @@ def generate_plan(input_data: dict, project_id: str | None) -> dict:
             retry = gemini_provider.generate_plan(plan_input, "\n".join(validation["errors"]))
             retry_validation = validate_plan_draft(retry["draft"])
             if not retry_validation["valid"]:
-                _record_plan_call(
-                    project_id, retry, success=False, degraded=False,
-                    error=" | ".join(retry_validation["errors"]), usage=retry["usage"],
+                record(
+                    retry,
+                    success=False,
+                    degraded=False,
+                    error=" | ".join(retry_validation["errors"]),
+                    usage=retry["usage"],
                 )
                 raise ApiError(
                     422,
@@ -286,9 +326,7 @@ def generate_plan(input_data: dict, project_id: str | None) -> dict:
                 )
             result, validation = retry, retry_validation
 
-        _record_plan_call(
-            project_id, result, success=True, degraded=False, error=None, usage=result["usage"]
-        )
+        record(result, success=True, degraded=False, usage=result["usage"])
         return result
     except ApiError:
         raise
@@ -304,17 +342,13 @@ def generate_plan(input_data: dict, project_id: str | None) -> dict:
                 ),
                 latency_ms=max(1, int((time.time() - started) * 1000)),
             )
-            _record_plan_call(
-                project_id, fallback, success=True, degraded=True, error=message, usage=None
-            )
+            record(fallback, success=True, degraded=True, error=message)
             return fallback
-        _record_plan_call(
-            project_id,
+        record(
             {"provider": provider, "model": ai["model"], "latencyMs": max(1, int((time.time() - started) * 1000))},
             success=False,
             degraded=False,
             error=message,
-            usage=None,
         )
         raise ApiError(
             502,

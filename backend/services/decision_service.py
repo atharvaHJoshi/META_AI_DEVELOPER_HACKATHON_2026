@@ -9,7 +9,7 @@ from django.db import connection, transaction
 from core.common import iso_datetime, new_id
 from core.errors import ApiError
 from ripplemap import schedule_graph
-from services import authz
+from services import authz, notification_service
 from services.snapshot import build_graph, load_plan_bundle, persist_snapshot
 from services.simulation_service import (
     compute_scenario,
@@ -518,6 +518,7 @@ def approve_decision(user_id: str, proposal_id: str, option: str, reason: str) -
                 summary=f"Plan version {applied['planVersionNumber']} created from decision {proposal['id']}.",
             )
 
+    notification_service.notify_decision_outcome(user_id, proposal_id, "approved")
     message = (
         f'Decision approved as "{option}". The plan is unchanged and the outcome is recorded in the audit trail.'
         if applied["planVersionNumber"] is None
@@ -573,6 +574,7 @@ def reject_decision(user_id: str, proposal_id: str, reason: str) -> dict:
             entity_id=proposal["id"],
             summary=f"Decision {proposal['id']} rejected: {reason}",
         )
+    notification_service.notify_decision_outcome(user_id, proposal_id, "rejected")
     return _outcome(
         proposal_id,
         user_id,
@@ -623,6 +625,7 @@ def clarify_decision(user_id: str, proposal_id: str, input_data: dict) -> dict:
             entity_id=proposal["id"],
             summary=f"Clarification requested on decision {proposal['id']}: {input_data.get('reason', '')}",
         )
+    notification_service.notify_decision_outcome(user_id, proposal_id, "clarified")
     return _outcome(
         proposal_id,
         user_id,

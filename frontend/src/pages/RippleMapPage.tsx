@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   AlertOctagon,
@@ -199,6 +199,7 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
   const [option, setOption] = useState<DecisionOption>("accept");
   const [scenario, setScenario] = useState<ScenarioResult | null>(null);
   const [simLoading, setSimLoading] = useState(false);
+  const simulationSequence = useRef(0);
   const [simError, setSimError] = useState<string | null>(null);
   const [simErrorCode, setSimErrorCode] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -225,6 +226,10 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
   const pending = data?.proposal.status === "pending";
 
   const selectOption = (next: DecisionOption) => {
+    // Invalidate any in-flight simulation so a slower response for the
+    // previous option cannot overwrite this selection's scenario.
+    simulationSequence.current += 1;
+    setSimLoading(false);
     setOption(next);
     setScenario(null);
     setSimError(null);
@@ -233,17 +238,20 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
 
   const simulate = async (next: DecisionOption = option) => {
     if (!data || !pending || isStale) return;
+    const sequence = (simulationSequence.current += 1);
     setSimLoading(true);
     setSimError(null);
     setSimErrorCode(null);
     setScenario(null);
     try {
       const result = await api.decisions.simulate(data.proposal.id, next, data.proposal.basePlanVersion);
+      if (sequence !== simulationSequence.current) return;
       setScenario(result);
       if (!result.valid) {
         setSimError("This option produces an invalid schedule. Review the validation errors below; approval is blocked.");
       }
     } catch (cause) {
+      if (sequence !== simulationSequence.current) return;
       const apiError = cause instanceof ApiError ? cause : null;
       setSimErrorCode(apiError?.code ?? null);
       setSimError(apiError?.message ?? "The simulation failed. The plan may have changed or the server may be unavailable.");
@@ -251,7 +259,7 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
         setStale(true);
       }
     } finally {
-      setSimLoading(false);
+      if (sequence === simulationSequence.current) setSimLoading(false);
     }
   };
 

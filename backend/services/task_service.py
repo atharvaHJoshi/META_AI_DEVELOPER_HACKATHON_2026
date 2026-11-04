@@ -9,7 +9,7 @@ from django.db import connection, transaction
 from core.common import iso_date, new_id, num
 from core.errors import ApiError
 from ripplemap import schedule_graph, validate_graph
-from services import authz
+from services import authz, notification_service
 from services.snapshot import build_graph, load_plan_bundle
 
 CONTRIBUTORS = ("owner", "pm", "member")
@@ -223,6 +223,8 @@ def create_task(user_id: str, project_id: str, input_data: dict) -> dict:
                 [new_id("audit"), project_id, user_id, task_id, f"Task created: {title}"],
             )
 
+    if input_data.get("assigneeId"):
+        notification_service.notify_task_assigned(user_id, task_id)
     return get_task(user_id, task_id)
 
 
@@ -328,6 +330,8 @@ def update_task(user_id: str, task_id: str, input_data: dict) -> dict:
                 ],
             )
 
+    if assignee_id and assignee_id != current["assignee_id"]:
+        notification_service.notify_task_assigned(user_id, task_id)
     return get_task(user_id, task_id)
 
 

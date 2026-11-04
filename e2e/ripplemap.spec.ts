@@ -1,13 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { DEMO_EMAIL, signIn } from "./helpers";
+import { DEMO_EMAIL, createPendingDecision, signIn } from "./helpers";
 
 test.describe("RippleMap critical decision journey", () => {
   test("simulates an option, approves it, and records an immutable plan version", async ({ page }) => {
     await signIn(page, DEMO_EMAIL);
     await expect(page.getByText(/Good (morning|afternoon|evening),/)).toBeVisible({ timeout: 25_000 });
+    const proposalId = await createPendingDecision(page);
     await page.goto("/ripplemap");
 
-    const decisionLink = page.locator('main a[href^="/ripplemap/"]').first();
+    const decisionLink = page.locator(`main a[href="/ripplemap/${proposalId}"]`);
     await expect(decisionLink).toBeVisible({ timeout: 20_000 });
     await decisionLink.click();
     await expect(page.getByRole("heading", { name: "Review change impact" })).toBeVisible();

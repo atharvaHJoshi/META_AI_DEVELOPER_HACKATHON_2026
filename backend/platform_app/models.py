@@ -203,11 +203,113 @@ class SecurityAudit(models.Model):
     outcome = models.CharField(max_length=20)
     ip_address = models.CharField(max_length=64, null=True, blank=True)
     user_agent = models.TextField(blank=True, default="")
+    request_id = models.CharField(max_length=64, null=True, blank=True)
     metadata = models.JSONField(default=dict)
     created_at = models.DateTimeField(default=dj_timezone.now)
 
     class Meta:
         db_table = "security_audit"
+        indexes = [
+            models.Index(fields=["action", "created_at"]),
+            models.Index(fields=["user", "created_at"]),
+        ]
+
+
+class RateLimitBucket(models.Model):
+    """Fixed-window counter shared by every API process.
+
+    A row is keyed by ``(scope, identity_hash, window_start)``. The service layer
+    performs an atomic upsert so two API workers cannot both observe a stale
+    count. Identities are hashed before storage; raw emails and IP addresses are
+    never used as keys.
+    """
+
+    id = models.CharField(primary_key=True, max_length=64)
+    scope = models.CharField(max_length=60)
+    identity_hash = models.CharField(max_length=128)
+    window_start = models.DateTimeField()
+    count = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(default=dj_timezone.now)
+
+    class Meta:
+        db_table = "rate_limit_buckets"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["scope", "identity_hash", "window_start"],
+                name="uniq_rate_limit_window",
+            )
+        ]
+        indexes = [models.Index(fields=["window_start"])]
+
+
+class Notification(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    recipient = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        db_column="recipient_id",
+        related_name="notifications",
+    )
+    workspace = models.ForeignKey(
+        Workspace, on_delete=models.CASCADE, db_column="workspace_id", null=True, blank=True
+    )
+    project = models.ForeignKey(
+        "Project", on_delete=models.SET_NULL, db_column="project_id", null=True, blank=True
+    )
+    notification_type = models.CharField(max_length=60)
+    title = models.CharField(max_length=255)
+    message = models.TextField(blank=True, default="")
+    entity_type = models.CharField(max_length=50, blank=True, default="")
+    entity_id = models.CharField(max_length=64, blank=True, default="")
+    link = models.CharField(max_length=300, blank=True, default="")
+    is_read = models.BooleanField(default=False)
+    read_at = models.DateTimeField(null=True, blank=True)
+    dedupe_key = models.CharField(max_length=180, null=True, blank=True)
+    created_at = models.DateTimeField(default=dj_timezone.now)
+
+    class Meta:
+        db_table = "notifications"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["recipient", "is_read", "created_at"]),
+            models.Index(fields=["workspace", "created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recipient", "dedupe_key"],
+                name="uniq_notification_dedupe",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.notification_type}: {self.title}"
+
+
+class NotificationPreference(models.Model):
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, db_column="user_id", related_name="notification_preferences"
+    )
+    category = models.CharField(max_length=40)
+    in_app = models.BooleanField(default=True)
+    email = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "notification_preferences"
+        unique_together = [("user", "category")]
+
+
+class EmailDelivery(models.Model):
+    id = models.CharField(primary_key=True, max_length=64)
+    recipient = models.CharField(max_length=320)
+    template = models.CharField(max_length=80)
+    status = models.CharField(max_length=20, default="sent")
+    error = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(default=dj_timezone.now)
+
+    class Meta:
+        db_table = "email_deliveries"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "created_at"])]
 
 
 class Project(models.Model):
@@ -472,6 +574,7 @@ class AiCall(models.Model):
     )
     organization_id = models.CharField(max_length=64, null=True, blank=True)
     workspace_id = models.CharField(max_length=64, null=True, blank=True)
+    user_id = models.CharField(max_length=64, null=True, blank=True)
     workflow = models.CharField(max_length=40)
     provider = models.CharField(max_length=40)
     model = models.CharField(max_length=120, blank=True, default="")
