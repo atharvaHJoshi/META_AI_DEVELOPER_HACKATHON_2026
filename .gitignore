@@ -7,10 +7,19 @@ dist/
 coverage/
 frontend/dist/
 backend/dist/
+backend/staticfiles/
 aiml/dist/
 packages/*/dist/
 .evaluation-cache/
 pgdata/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Local archive of the superseded SPMT project
 .archive/

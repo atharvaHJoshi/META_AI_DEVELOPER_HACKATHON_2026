@@ -8,7 +8,7 @@ The MIRAIWERK AI backend exposes a JSON-over-HTTP API from `backend/`. It is sta
 - IDs: application-generated strings with a prefix (`prj_`, `req_`, `ms_`, `task_`, `tkt_`, `dec_`, `scn_`, `da_`, `audit_`, `pv_`)
 - API versioning: none in this build; the contracts live in `packages/schemas`
 
-The frontend imports the same Zod contracts from `@miraiwerk/schemas`, so a shape change breaks typecheck before it becomes a runtime surprise.
+The frontend imports the same Zod contracts from `@miraiwerk/schemas`, so a shape change breaks typecheck before it becomes a runtime surprise. The backend validates requests with equivalent Pydantic models and returns `VALIDATION_ERROR` with flattened `fieldErrors`/`formErrors`.
 
 ## Authentication and roles
 
@@ -171,7 +171,7 @@ All errors use one envelope:
 | `409` | `BASELINE_VERSION_MISMATCH` | Simulation request names a baseline other than the proposal's |
 | `409` | `SCENARIO_REQUIRED` | No stored scenario exists for the selected option |
 | `409` | `SCENARIO_STALE` | Stored scenario hash no longer matches a fresh computation |
-| `422` | `VALIDATION_ERROR` | Request body failed Zod validation; `details` contains field errors |
+| `422` | `VALIDATION_ERROR` | Request body failed Pydantic validation; `details` contains `fieldErrors` and `formErrors` |
 | `422` | `INVALID_PLAN` | Draft or committed plan failed graph validation |
 | `422` | `SCENARIO_INVALID` | Selected change leaves the graph invalid |
 | `422` | `SPLIT_NOT_AVAILABLE` | Proposal has no split option |

@@ -58,13 +58,13 @@ Brief ──► Generated plan ──► Ticket intake ──► AI analysis
 | Layer | Choice |
 | --- | --- |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, React Router |
-| Backend | Node.js 20+, Express, TypeScript, Zod |
-| AIML | `aiml/` — Gemini + Meta adapters, prompts, deterministic rules, policy, benchmark |
+| Backend | Python 3.12+, Django 6 (ORM, migrations, admin) + FastAPI, Pydantic |
+| AIML | `backend/aiml` — Gemini + deterministic rules + policy (Meta provider not shipped in the Python build) |
 | Data | PostgreSQL 16 |
-| Shared contracts | `packages/schemas` (Zod runtime contracts and inferred types) |
-| Simulation | `packages/ripplemap` (dependency scheduling and RippleMap scenario diffing) |
+| Shared contracts | `packages/schemas` (Zod runtime contracts for the frontend) |
+| Simulation | `backend/ripplemap` (dependency scheduling and RippleMap scenario diffing) |
 | AI | Gemini by default, Meta Model API optional, labelled deterministic fallback |
-| Tests | Vitest, Supertest, Testing Library, Playwright |
+| Tests | pytest, TestClient, Playwright |
 | Local infrastructure | Docker Compose (`miraiwerk-db` on port **55434**) |
 
 ## Architecture
@@ -73,40 +73,37 @@ Brief ──► Generated plan ──► Ticket intake ──► AI analysis
 frontend/ ─────────────────────────────┐
   React pages, RippleMap, platform UI  │  JSON over HTTP
                                        ▼
-backend/ ────────────────────────────────────────────────────────────
-  routes → services → db / RippleMap / AIML                          │
-  ├─ auth: register, login, refresh, sessions, OAuth, demo identity  │
-  ├─ platform: organizations, workspaces, teams, tasks, roadmap      │
-  ├─ collaboration: documents, meetings, discussions, audit          │
-  ├─ projects: brief, plan generation, plan versions                 │
-  ├─ tickets: intake, analysis, proposal persistence                 │
-  └─ decisions: simulation, approval, rejection, clarification       │
+backend/ (ASGI app on port 4000)
+  ├─ /api        FastAPI — HTTP API, Pydantic validation, JWT auth
+  ├─ /admin      Django admin — staff-only operator console
+  ├─ platform_app Django models, migrations, ORM, admin registrations
+  ├─ api/        routers + request validation
+  ├─ services/   business logic (auth, projects, tickets, decisions, collab)
+  ├─ ripplemap/  deterministic graph scheduler and scenario simulator
+  ├─ aiml/       Gemini provider, deterministic rules, policy, schemas
+  └─ manage.py   migrate, seed_demo, create_admin
                                        │
-                     ┌─────────────────┼─────────────────┐
-                     ▼                 ▼                 ▼
-              aiml/             packages/ripplemap  packages/schemas
-       model + rules + policy    graph scheduling   runtime contracts
-                     │                 │                 │
-                     └─────────────────┴────────┬────────┘
-                                                ▼
-                                           PostgreSQL
+                                       ▼
+                                 PostgreSQL
 ```
 
-The backend is a modular monolith: one deployable API, explicit service boundaries, no distributed-system theatre. The AIML layer is a pure library package: it never opens a database connection and never exposes a secret to the browser.
+The backend is a modular monolith: one deployable ASGI app serving both the API and the Django admin, with explicit service boundaries and no distributed-system theatre. The AIML layer stays a pure library: it never opens a database connection and never exposes a secret to the browser. Django owns the schema, migrations, ORM and admin; FastAPI owns the HTTP surface.
 
 ## Repository layout
 
 ```text
 .
 ├── frontend/                 React workspace, RippleMap, delivery and collaboration UI
-├── backend/                  Express API, services, migrations, seed, integration tests
-├── aiml/                     AI/ML layer: Gemini + Meta adapters, rules, policy
-│   ├── src/
-│   ├── scripts/evaluate.ts   Benchmark runner
-│   └── evaluations/          40-case labelled benchmark and generated reports
+├── backend/                  Python backend — Django (ORM/admin/migrations) + FastAPI API
+│   ├── platform_app/         models, admin, password hashing, `seed_demo` command
+│   ├── api/                  FastAPI app, routers, Pydantic request validation
+│   ├── services/             business logic (auth, projects, tickets, decisions, collab)
+│   ├── ripplemap/            deterministic scheduler and scenario simulator
+│   ├── aiml/                 Gemini provider, deterministic rules, policy
+│   ├── miraiwerk/            ASGI composition (FastAPI + Django admin)
+│   └── tests/                pytest: RippleMap, API and Django admin tests
 ├── packages/
-│   ├── schemas/              Shared Zod contracts and TypeScript types
-│   └── ripplemap/            Deterministic graph scheduler and impact simulator
+│   └── schemas/              Shared Zod contracts and TypeScript types (frontend)
 ├── e2e/                      Playwright browser journeys
 ├── docs/                     Architecture, API, setup, evidence contract, progress report
 ├── docker-compose.yml        PostgreSQL 16 on host port 55434
@@ -117,13 +114,15 @@ The backend is a modular monolith: one deployable API, explicit service boundari
 
 ### Prerequisites
 
-- Node.js **20+**
 - Docker (or a PostgreSQL 16 instance)
-- npm 10+
+- **Python 3.12+** with `venv`
+- Node.js **20+** and npm 10+ (for the frontend)
 
 ### 1. Install
 
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements.txt
 npm install
 ```
 
@@ -140,8 +139,8 @@ No secret is required for the demo. Leave `GEMINI_API_KEY` and `MODEL_API_KEY` e
 
 ```bash
 npm run db:up
-npm run db:migrate
-npm run db:seed
+npm run db:migrate   # Django migrations
+npm run db:seed      # curated demo scenario (deterministic rules; --ai to use a provider)
 ```
 
 ### 4. Run the app
@@ -151,10 +150,10 @@ npm run dev
 ```
 
 - Frontend: <http://localhost:5173>
-- Backend: <http://localhost:4000>
-- Health: <http://localhost:4000/api/health>
+- API: <http://localhost:4000/api> (health: <http://localhost:4000/api/health>)
+- Django admin: <http://localhost:4000/admin> (staff users only; run `npm run admin` to create or promote one)
 
-Sign in with any seeded identity — the login page lists them and pre-fills the demo password.
+Sign in with any seeded identity — the login page lists them and pre-fills the demo password. The seed also marks Maya as staff, so the Django admin at `/admin` signs in with the same credentials.
 
 ### Demo identities
 
@@ -196,20 +195,19 @@ The seed creates a commerce relaunch project with five tickets: one approved dec
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Run backend and frontend together |
-| `npm run dev:backend` | Run only the API |
+| `npm run dev:backend` | Run only the API (uvicorn, port 4000) |
 | `npm run dev:frontend` | Run only the web app |
-| `npm run build` | Build schemas, RippleMap, AIML, backend and frontend |
-| `npm run typecheck` | Typecheck every workspace |
-| `npm test` | Run RippleMap unit tests and backend integration tests |
+| `npm run build` | Build schemas and frontend |
+| `npm test` | Run the backend pytest suite and frontend tests |
+| `npm run test:backend` | Run the pytest integration + unit suite |
 | `npm run test:frontend` | Run frontend component/unit tests |
 | `npm run test:e2e` | Run the Playwright browser journeys |
-| `npm run test:all` | Run unit, integration, frontend and E2E suites |
-| `npm run evaluate` | Run the 40-case AIML ticket benchmark and regenerate reports |
 | `npm run db:up` | Start the PostgreSQL container |
 | `npm run db:down` | Stop the container (data volume is preserved) |
-| `npm run db:migrate` | Apply pending SQL migrations |
+| `npm run db:migrate` | Apply pending Django migrations |
 | `npm run db:seed` | Reset demo data and recreate the curated scenario |
-| `npm run db:reset` | Drop schema, re-migrate and re-seed in one step |
+| `npm run db:reset` | Drop the volume, re-migrate and re-seed |
+| `npm run admin` | Create a Django staff user for `/admin` |
 
 ## AI providers
 
@@ -225,7 +223,7 @@ GEMINI_MAX_RETRIES=3
 AI_FALLBACK_ON_ERROR=true
 ```
 
-### Meta Model API (optional)
+### Meta Model API (optional — not shipped in the Python build)
 
 ```dotenv
 AI_PROVIDER=meta
@@ -234,28 +232,14 @@ META_BASE_URL=https://api.meta.ai/v1
 META_MODEL=muse-spark-1.3
 META_TIMEOUT_MS=45000
 META_MAX_RETRIES=2
-META_TOOLS=true
 ```
 
-Set these on the server only. The adapter calls an OpenAI-compatible Chat Completions endpoint with JSON-schema response formats. If no key is configured, the API reports `deterministic-demo` and `miraiwerk-rules-v1` in the UI and in proposal metadata. If a configured model call fails and `AI_FALLBACK_ON_ERROR=true`, the proposal is explicitly marked `degraded`; it is never presented as a successful model result.
+The Python backend ships the **Gemini** provider. If `AI_PROVIDER=meta` is selected, or Gemini is not configured, MIRAIWERK uses its labelled deterministic rules — the proposal says so in `modelProvider` and a `degraded`/`notice` when applicable; Meta is never claimed as output.
+
+Set these on the server only. The Gemini provider calls the structured-output generateContent endpoint with bounded retries and timeouts; if a configured model call fails and `AI_FALLBACK_ON_ERROR=true`, the proposal is explicitly marked `degraded`; it is never presented as a successful model result.
 
 The browser never receives the key. `VITE_*` variables are public by definition and are limited to the API base URL.
 
-## Evaluation
-
-```bash
-npm run evaluate
-```
-
-The benchmark measures ticket type, policy priority, recommendation, evidence discipline, proposal completeness and duplicate-candidate behaviour. The current generated report is in [`aiml/evaluations/report.md`](aiml/evaluations/report.md).
-
-To compare against a model path, configure the provider and run:
-
-```bash
-npm run evaluate -w @miraiwerk/aiml -- --provider=meta
-```
-
-The deterministic score is a calibration check for the fallback rules, **not** evidence of model quality. See [`docs/evidence-contract.md`](docs/evidence-contract.md) for the rules behind the labels.
 
 ## Evidence and decision guarantees
 
@@ -273,17 +257,18 @@ Read the full contract in [`docs/evidence-contract.md`](docs/evidence-contract.m
 ## Tests
 
 ```bash
-npm test                 # RippleMap + backend integration (needs PostgreSQL)
+npm test                 # backend pytest suite + frontend tests (needs PostgreSQL for backend)
+npm run test:backend     # RippleMap unit tests + API integration tests
 npm run test:frontend    # frontend unit/component tests
 npm run test:e2e         # Playwright journeys (starts its own dev servers)
 ```
 
-- `packages/ripplemap`: scheduling, cycle detection, scenario validity, milestone deltas, critical path, deterministic hashing.
+- `backend/ripplemap`: scheduling, cycle detection, scenario validity, milestone deltas, critical path, deterministic hashing — verified against the original TypeScript engine output.
 - `backend`: isolated PostgreSQL integration tests for project creation, ticket analysis, simulation, approval versioning, stale rejection, scenario requirements, defer semantics, RBAC and validation errors.
 - `frontend`: formatting helpers and shared UI primitives.
 - `e2e`: sign-in/access, viewer permissions, RippleMap approval, ticket intake and analysis, Kanban, documentation, discussions, meetings, responsive navigation and API failure states.
 
-The backend integration suite requires the database container and migrations to be running.
+The backend integration suite requires the database container and Django migrations to be running.
 
 ## Deliberately out of scope
 
@@ -298,4 +283,5 @@ MIRAIWERK is a planning and decision system, not an autonomous engineering platf
 - [`docs/demo-script.md`](docs/demo-script.md) — a seven-minute walkthrough for judges and reviewers
 - [`docs/progress-report.md`](docs/progress-report.md) — current build report and verified state
 - [`docs/merge-notes.md`](docs/merge-notes.md) — how the MIRAIWERK and Nirnaya codebases were merged
-- [`aiml/evaluations/README.md`](aiml/evaluations/README.md) — benchmark format and interpretation
+- [`backend/README.md`](backend/README.md) — the Django + FastAPI backend layout and operations
+- [`backend/pytest.ini`](backend/pytest.ini) — pytest entry for the backend suite

@@ -45,4 +45,4 @@ The superseded source trees are preserved on disk under `.archive/` and excluded
 
 ## Verification
 
-The merged tree is verified by `npm run typecheck`, `npm test`, `npm run test:frontend`, `npm run test:e2e`, `npm run build` and `npm run evaluate`. See `docs/progress-report.md` for the current results and known limitations.
+The merged tree was verified by `npm run typecheck`, `npm test`, `npm run test:frontend`, `npm run test:e2e` and `npm run build`. See `docs/progress-report.md` for the October 2026 results and `README.md` for the current stack.

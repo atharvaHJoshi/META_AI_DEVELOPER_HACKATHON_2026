@@ -36,6 +36,15 @@ import {
 
 const STATUSES = ["draft", "in_review", "published"];
 
+type DocumentDraft = {
+  documentId: string;
+  updatedAt: string;
+  title: string;
+  content: string;
+  status: string;
+  docType: "markdown" | "diagram";
+};
+
 export function DocsPage() {
   const { activeWorkspace, role } = useWorkspace();
   const { toast } = useToast();
@@ -45,7 +54,7 @@ export function DocsPage() {
     [workspaceId],
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ title: string; content: string; status: string; docType: "markdown" | "diagram" } | null>(null);
+  const [draftState, setDraftState] = useState<DocumentDraft | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -61,6 +70,23 @@ export function DocsPage() {
   const documents = data?.documents ?? [];
   const selected = documents.find((document) => document.id === selectedId) ?? null;
   const canEdit = hasRole(role, "member");
+  // Never expose a draft that belongs to a different document or server
+  // revision: switching/creating documents must not paint stale content into
+  // the editor, and the save button must reflect only real edits.
+  const draft: DocumentDraft | null = !selected
+    ? null
+    : draftState &&
+        draftState.documentId === selected.id &&
+        draftState.updatedAt === selected.updatedAt
+      ? draftState
+      : {
+          documentId: selected.id,
+          updatedAt: selected.updatedAt,
+          title: selected.title,
+          content: selected.content,
+          status: selected.status,
+          docType: selected.docType,
+        };
   const isDirty = Boolean(
     selected &&
       draft &&
@@ -78,23 +104,14 @@ export function DocsPage() {
   }, [documents, selectedId]);
 
   useEffect(() => {
-    if (selected) {
-      setDraft({
-        title: selected.title,
-        content: selected.content,
-        status: selected.status,
-        docType: selected.docType,
-      });
-      setSaveError(null);
-      setAiNotice(null);
-    } else {
-      setDraft(null);
-    }
+    setSaveError(null);
+    setAiNotice(null);
   }, [selected?.id, selected?.updatedAt]);
 
   const select = (document: Document) => {
     if (document.id === selectedId) return;
     if (isDirty && !window.confirm("Discard unsaved changes to the current document?")) return;
+    setDraftState(null);
     setSelectedId(document.id);
   };
 
@@ -172,7 +189,7 @@ export function DocsPage() {
         title: draft.title.trim() || "Untitled document",
         outline: outline.trim(),
       });
-      setDraft({ ...draft, content: result.text });
+      setDraftState({ ...draft, content: result.text });
       setAiNotice(result.degraded ? `${result.notice} — labelled deterministic draft.` : `${result.provider} · ${result.model}. Review before saving.`);
       toast("AI draft inserted into the editor. Review and save when ready.", "success");
       setAiOpen(false);
@@ -297,10 +314,10 @@ export function DocsPage() {
                 {aiNotice && <Alert tone="info" title="AI draft inserted">{aiNotice}</Alert>}
                 <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
                   <Field label="Title" htmlFor="doc-title">
-                    <Input id="doc-title" value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} disabled={!canEdit} />
+                    <Input id="doc-title" value={draft.title} onChange={(event) => setDraftState({ ...draft, title: event.target.value })} disabled={!canEdit} />
                   </Field>
                   <Field label="Status" htmlFor="doc-status">
-                    <Select id="doc-status" value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value })} disabled={!canEdit}>
+                    <Select id="doc-status" value={draft.status} onChange={(event) => setDraftState({ ...draft, status: event.target.value })} disabled={!canEdit}>
                       {STATUSES.map((status) => <option key={status} value={status}>{titleCase(status)}</option>)}
                       {!STATUSES.includes(draft.status) && <option value={draft.status}>{titleCase(draft.status)}</option>}
                     </Select>
@@ -317,7 +334,7 @@ export function DocsPage() {
                   <Textarea
                     id="doc-content"
                     value={draft.content}
-                    onChange={(event) => setDraft({ ...draft, content: event.target.value })}
+                    onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
                     className={cn("min-h-[420px] font-mono text-xs leading-6", draft.docType === "diagram" && "bg-surface-muted")}
                     placeholder={
                       draft.docType === "diagram"

@@ -280,8 +280,7 @@ Return to the workspace.
 Mention the verification commands:
 
 ```bash
-npm test          # RippleMap unit tests + 12 backend integration tests
-npm run evaluate  # 40 labelled cases, generated report
+npm test          # backend pytest suite (RippleMap unit + API integration) and frontend tests
 npm run build
 ```
 
@@ -290,7 +289,7 @@ Mention the honest limits:
 - No code editor, coding agent, virtual meetings, universal ticketing, autonomous plan changes, multi-agent orchestration, or fine-tuning.
 - Duplicate candidates are lexical and advisory.
 - Estimates are planning estimates, not delivery commitments.
-- The deterministic evaluation score is not evidence of model quality.
+- Deterministic rules are labelled as such wherever they run.
 
 Reset for the next run:
 

@@ -1,5 +1,7 @@
 # MIRAIWERK AI — Project Progress Report
 
+> **This report is superseded (November 2026).** The backend it describes was fully rebuilt in **Python**: Django 6 (models, migrations, admin, ORM) owns the schema and `backend/aiml`, `backend/ripplemap` are Python ports of the TypeScript AIML and RippleMap packages, which have been removed. FastAPI owns the HTTP API (same `/api` contract). The backend integration suite now runs as pytest (`backend/tests/`, 45 passing across the RippleMap unit suite, the core decision-loop suite, the write-surface suite and the Django admin compatibility suite), and `docs/architecture.md` and the root `README.md` describe the current system. The original TypeScript backend is preserved in git history. The remainder of this document is the October 2026 snapshot, kept for the record.
+
 **Report date:** 26 October 2026  
 **Status:** End-to-end demo working; production hardening not started  
 **Repository root:** `/home/aathi/Documents/HACKATHON/META_AI_HACKATHON_2026`  

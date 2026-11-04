@@ -1,6 +1,6 @@
 # Architecture
 
-MIRAIWERK AI is a modular monolith. It has one React frontend, one HTTP backend, one database, a dedicated AIML library, and two shared packages. The interesting boundary is not service count; it is the boundary between what a model proposes and what deterministic code can prove.
+MIRAIWERK AI is a modular monolith. It has one React frontend, one HTTP backend, one database and a deterministic simulation engine. The interesting boundary is not service count; it is the boundary between what a model proposes and what deterministic code can prove.
 
 ## System context
 
@@ -8,11 +8,15 @@ MIRAIWERK AI is a modular monolith. It has one React frontend, one HTTP backend,
 frontend/ (React)
    │  JSON + bearer token / demo identity
    ▼
-backend/ (Express) ──► PostgreSQL
-   │
-   ├─► aiml/                 model orchestration, rules, policy, benchmark
-   ├─► packages/schemas      runtime validation for every boundary
-   └─► packages/ripplemap    deterministic scheduling + RippleMap scenario diff
+backend/ (Django + FastAPI, ASGI app on port 4000)
+   │  /api → FastAPI (HTTP API, JWT auth)   /admin → Django admin (staff only)
+   ▼
+PostgreSQL
+   ├── platform_app   models, migrations, ORM, admin
+   ├── api/           routers + Pydantic validation
+   ├── services/      business logic orchestration
+   ├── aiml/          model orchestration, deterministic rules, policy
+   └── ripplemap/     deterministic scheduling + scenario simulation
 ```
 
 The backend is stateless. All durable state lives in PostgreSQL. The browser never receives a model key and never performs authorization decisions.
@@ -23,33 +27,32 @@ The backend is stateless. All durable state lives in PostgreSQL. The browser nev
 | --- | --- |
 | `frontend/src/pages` | Workspace, plan generator, plan, tickets, decision card, RippleMap, history, platform and collaboration pages. |
 | `frontend/src/components` | Gantt, RippleMap scenario impact, milestone deltas, app shell, shared UI primitives. |
-| `backend/src/routes` | HTTP parsing, Zod validation, status codes. No business rules. |
-| `backend/src/services` | Plan, ticket, decision, simulation, auth, organization, task and collaboration orchestration. |
-| `backend/src/db` | Pool, row types, plan-bundle loading, snapshot persistence. |
-| `backend/src/auth.ts` | Bearer/demo identity resolution, workspace-role mapping and project-role checks. |
-| `backend/src/security` | Argon2id password hashing, JWT signing and OAuth state tokens. |
-| `aiml/src/providers` | Gemini and Meta adapters, prompts, JSON schemas, read-only tools. |
-| `aiml/src/rules` | Labelled deterministic plan templates and ticket analyser. |
-| `aiml/src/policy.ts` | Evidence-aware priority and response-window policy. |
-| `aiml/evaluations` | 40-case benchmark, reports, interpretation rules. |
-| `packages/schemas` | Zod contracts shared by browser and server, including platform contracts. |
-| `packages/ripplemap` | Graph validation, working-day scheduling, RippleMap simulation. |
+| `backend/api/routers` | HTTP parsing, Pydantic validation, status codes. No business rules. |
+| `backend/services` | Plan, ticket, decision, simulation, auth, organization, task and collaboration orchestration. |
+| `backend/platform_app` | Django models, migrations, admin registrations, password hashing, seed command. |
+| `backend/api/deps.py` | Bearer/demo identity resolution, workspace selection header. |
+| `backend/services/authz.py` | Workspace/organization/project role resolution and access assertions. |
+| `backend/services/auth_service.py` | Argon2id hashing, JWT issuance, refresh-token rotation, OAuth state, sessions. |
+| `backend/aiml/gemini.py` | Gemini adapter, prompts, structured-output schemas, bounded retries. |
+| `backend/aiml/analyzer.py` + `aiml/policy.py` | Labelled deterministic ticket analysis rules and priority policy. |
+| `backend/aiml/templates.py` | Labelled deterministic plan templates (commerce + generic). |
+| `backend/ripplemap` | Graph validation, working-day scheduling, RippleMap simulation. |
 
-Services receive plain inputs and return contract-shaped objects. Routes do not import the database directly. The AIML library has no knowledge of Express or PostgreSQL, and RippleMap has no knowledge of either.
+Services receive plain inputs and return contract-shaped objects. The AIML and RippleMap packages have no knowledge of Django, FastAPI or PostgreSQL.
 
 ## AIML boundary
 
-`aiml/` is a pure TypeScript library. The dependency direction is one-way:
+`backend/aiml/` is a pure Python library. The dependency direction is one-way:
 
 ```text
-frontend ──► backend ──► aiml ──► schemas / ripplemap
+frontend ──► backend/api ──► backend/services ──► aiml / ripplemap
 ```
 
-- The backend may import AIML; AIML never imports backend code, the database, or Express.
+- The services layer may import AIML; AIML never imports services, Django models, the HTTP layer, or PostgreSQL.
 - AIML returns proposals and policy outcomes. It does not persist, approve, or version anything.
-- Model output is validated against the shared Zod contracts before the backend stores it.
+- Model output is validated against the Pydantic contracts in `aiml/schemas.py` before the backend stores it; a validation failure degrades to labelled deterministic rules.
 - When no key is configured, the same public surface returns labelled deterministic rules.
-- The evaluation harness imports AIML directly, so model and fallback quality can be measured without a running API.
+- The API integration suite exercises the same public surface through the HTTP layer.
 
 This keeps the model replaceable and the approval boundary auditable.
 
@@ -164,7 +167,7 @@ The policy engine runs after the model/rule classification and can only raise or
 
 ## RippleMap
 
-`packages/ripplemap` is pure TypeScript with no I/O.
+`backend/ripplemap` is pure Python with no I/O. The port was verified output-for-output against the original TypeScript implementation.
 
 ### Validation
 
@@ -290,18 +293,17 @@ Every error response has the shape:
 - `403 FORBIDDEN` — not a member or insufficient role
 - `404 *_NOT_FOUND` — missing project/ticket/decision
 - `409` — stale proposal, non-pending decision, missing/mismatched scenario, baseline mismatch
-- `422 VALIDATION_ERROR` — Zod schema failure
+- `422 VALIDATION_ERROR` — Pydantic schema failure (flattened `fieldErrors` / `formErrors` in the error details)
 - `422 INVALID_PLAN` / `SCENARIO_INVALID` — graph or proposal invalid
 - `502 MODEL_UNAVAILABLE` — model failure when fallback is disabled
 - `500 INTERNAL_ERROR` — unexpected server failure
 
 ## Testing strategy
 
-- **RippleMap unit tests** cover cycle detection, working-day scheduling, scenario validity, milestone deltas, critical path, and hash stability.
-- **API integration tests** run against PostgreSQL and cover the full decision loop, role gates, stale handling, scenario enforcement, defer semantics, and validation. They create their own isolated users/project and clean up.
+- **RippleMap unit tests** cover cycle detection, working-day scheduling, scenario validity, milestone deltas, critical path, and hash stability — and are verified against the original engine.
+- **API integration tests** run against PostgreSQL through the ASGI app and cover the full decision loop, role gates, stale handling, scenario enforcement, defer semantics, and validation. They create their own isolated users/project and clean up.
 - **Frontend unit/component tests** cover formatting helpers and shared UI primitives.
 - **Playwright E2E journeys** cover sign-in/access, viewer permissions, RippleMap approval, ticket intake and analysis, Kanban, documentation, discussions, meetings, responsive navigation and API failure states.
-- **Evaluation benchmark** covers 40 hand-labelled tickets across classification, priority, recommendation, evidence discipline, and duplicate candidacy.
 
 ## Deferred by design
 

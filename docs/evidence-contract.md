@@ -173,7 +173,7 @@ The proposal is a hypothesis about a change. It is not a plan mutation.
 
 ### Simulation
 
-RippleMap is pure deterministic TypeScript. For a given graph, change, related-task set, and target milestone it:
+RippleMap is pure deterministic Python (`backend/ripplemap`), verified output-for-output against the original TypeScript implementation. For a given graph, change, related-task set, and target milestone it:
 
 1. Applies additions, updates, removals, and dependencies.
 2. Validates the resulting graph.
@@ -251,15 +251,13 @@ These limits are deliberate. The product's value comes from making the boundary 
 
 ## 7. How this is tested
 
-- `packages/ripplemap` unit tests cover graph validation, cycle detection, working-day scheduling, milestone deltas, critical path, scenario validity, and hash stability.
-- `backend/src/__tests__/api.integration.test.ts` exercises the full loop: project v1, ticket intake, analysis, simulation, accept → v2, sibling stale → `409`, missing scenario → `409`, defer without versioning, role gates, and schema errors. It creates and deletes its own users and project.
-- `aiml/evaluations/tickets.json` holds 40 hand-labelled tickets. The generated report is in `aiml/evaluations/report.md`; interpretation rules are in `aiml/evaluations/README.md`.
+- `backend/tests/test_ripplemap.py` covers graph validation, cycle detection, working-day scheduling, milestone deltas, critical path, scenario validity, and hash stability.
+- `backend/tests/test_api_integration.py` exercises the full loop through the ASGI app: project v1, ticket intake, analysis, simulation, accept → v2, sibling stale → `409`, missing scenario → `409`, defer without versioning, role gates, and schema errors. It creates and deletes its own users and project.
 
 Run:
 
 ```bash
-npm test
-npm run evaluate
+cd backend && ../.venv/bin/python -m pytest
 ```
 
-The integration suite requires PostgreSQL running and migrated. The evaluation defaults to the deterministic path; `--provider=meta` requires a configured key.
+The integration suite requires PostgreSQL running and migrated.

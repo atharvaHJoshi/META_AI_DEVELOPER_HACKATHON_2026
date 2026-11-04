@@ -11,21 +11,21 @@ test.describe("Collaboration journeys", () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel(/Title/i).fill("E2E release decision record");
     await dialog.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(dialog).toBeHidden();
 
     const selected = page.getByLabel(/Markdown content|Diagram source/i);
     await expect(selected).toBeVisible();
+    await expect(selected).toHaveValue("");
     await selected.fill("# E2E release decision record\n\n## Decision\n\nRelease gate remains closed until evidence is accepted.");
     const saveButton = page.getByRole("button", { name: /Save/i });
     await expect(saveButton).toBeEnabled({ timeout: 10_000 });
     await saveButton.click();
     await expect(page.getByText("Document saved.")).toBeVisible();
 
-    const docDialog = page.getByRole("dialog");
-    if (await docDialog.getByRole("button", { name: /Delete document/i }).isVisible().catch(() => false)) {
-      await docDialog.getByRole("button", { name: /Delete document/i }).click();
-      await page.getByRole("button", { name: /Delete document/i }).click();
-      await expect(page.getByText("Document deleted.")).toBeVisible();
-    }
+    await page.getByRole("button", { name: "Delete E2E release decision record" }).click();
+    const deleteDialog = page.getByRole("dialog");
+    await deleteDialog.getByRole("button", { name: "Delete document" }).click();
+    await expect(page.getByText("Document deleted.")).toBeVisible();
   });
 
   test("posts a discussion reply and marks the thread solved", async ({ page }) => {

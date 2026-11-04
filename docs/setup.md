@@ -4,12 +4,12 @@ This guide takes a clean checkout to a running MIRAIWERK demo.
 
 ## 1. Prerequisites
 
-- Node.js **20 or newer** (`node --version`)
-- npm 10+
+- **Python 3.12+** (`python3 --version`) with `venv`
+- Node.js **20 or newer** (`node --version`) and npm 10+ (frontend only)
 - Docker Engine with Compose v2
 - Free ports:
   - **55434** for PostgreSQL
-  - **4000** for the API
+  - **4000** for the API (and Django admin)
   - **5173** for the Vite dev server
 
 The database deliberately uses port `55434` on the host to avoid colliding with other local PostgreSQL containers.
@@ -19,10 +19,12 @@ The database deliberately uses port `55434` on the host to avoid colliding with 
 From the repository root:
 
 ```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -r backend/requirements.txt
 npm install
 ```
 
-This is an npm-workspaces monorepo. One install covers `frontend/`, `backend/`, `aiml/` and `packages/*`.
+The Python backend lives under `backend/` (Django + FastAPI). `uv`-style installs work just as well if you prefer them — it only ever reads `.venv` via relative paths in the npm scripts. `npm install` covers the frontend and `packages/schemas`.
 
 ## 3. Configure the environment
 
@@ -33,8 +35,8 @@ cp .env.example backend/.env
 
 Why both?
 
-- The API and Vite read the root `.env` during normal `npm run dev`.
-- The standalone migration/seed resets run with `backend` as their working directory, so they read `backend/.env`.
+- The backend loads the first available of `backend/.env` and the root `.env`.
+- Vite and the Playwright config read the root `.env`.
 
 Neither file is committed. `.gitignore` excludes `.env` and `.env.local`.
 
@@ -80,7 +82,7 @@ docker exec miraiwerk-db pg_isready -U miraiwerk -d miraiwerk
 npm run db:migrate
 ```
 
-Migrations live in `backend/db/migrations/` and are applied in filename order through the `schema_migrations` table.
+Migrations are Django migrations in `backend/platform_app/migrations/` (`0001_initial`, the database-defaults migration, and the `parent_version_id` column rename). Apply them with `python manage.py migrate`; create new ones with `python manage.py makemigrations` after editing `platform_app/models.py`.
 
 ## 6. Seed the demo
 
@@ -88,17 +90,17 @@ Migrations live in `backend/db/migrations/` and are applied in filename order th
 npm run db:seed
 ```
 
-This truncates the application tables and creates:
+This resets the product tables and creates:
 
-- 4 demo users: Maya (owner), Arjun (manager), Lena (member), Priya (viewer)
+- 4 demo users: Maya (owner, staff), Arjun (manager), Lena (member), Priya (viewer)
 - 1 organization and 2 workspaces
 - a seeded team, project members and workspace members
-- 1 commerce relaunch project at plan version 2
+- 1 commerce relaunch project at plan version 2 (plan v2 is the deterministic seed output)
 - 5 tickets: one approved decision, four pending decisions
 - documents, a meeting, discussion threads and workspace audit history
 - scenario runs and AI-call telemetry
 
-The seed is deterministic apart from generated IDs and timestamps.
+The seed is deterministic apart from generated IDs and timestamps. It uses labelled deterministic rules by default — no network calls, finishes in seconds. Pass `--ai` (`python backend/manage.py seed_demo --ai`) to run analysis through the configured AI provider instead.
 
 To rebuild everything from scratch:
 
@@ -106,7 +108,7 @@ To rebuild everything from scratch:
 npm run db:reset
 ```
 
-That drops the schema, re-runs migrations and re-seeds in one command. It is destructive.
+That drops the volume, re-runs migrations and re-seeds in one command. It is destructive.
 
 ## 7. Run the app
 
@@ -119,8 +121,11 @@ This runs the backend and frontend dev servers together with `concurrently`.
 | Service | URL |
 | --- | --- |
 | Frontend | <http://localhost:5173> |
-| Backend | <http://localhost:4000> |
+| API | <http://localhost:4000/api> |
 | Health | <http://localhost:4000/api/health> |
+| Django admin | <http://localhost:4000/admin> |
+
+The backend dev script runs `collectstatic` before uvicorn, so the Django admin is styled on a clean checkout. If you launch uvicorn directly, run `cd backend && ../.venv/bin/python manage.py collectstatic --noinput` once first.
 
 A healthy response looks like:
 
@@ -153,15 +158,13 @@ Sessions use a short-lived bearer access token plus a rotating refresh token in 
 ## 9. Verify the installation
 
 ```bash
-npm run typecheck
 npm test
 npm run test:frontend
 npm run test:e2e
 npm run build
-npm run evaluate
 ```
 
-The API integration tests need PostgreSQL running and migrated. They create their own users and project, then delete both. The E2E suite starts its own backend and frontend on the standard ports; stop `npm run dev` first if it is still running.
+The backend pytest suite needs PostgreSQL running and migrated. It creates its own users and project, then deletes both. The E2E suite starts its own backend and frontend on the standard ports; stop `npm run dev` first if it is still running.
 
 Playwright uses `/opt/google/chrome/chrome` by default. Override it with `PLAYWRIGHT_CHROMIUM_PATH` if Chrome lives elsewhere.
 
@@ -181,7 +184,7 @@ GEMINI_MAX_RETRIES=3
 AI_FALLBACK_ON_ERROR=true
 ```
 
-### Meta Model API (optional)
+### Meta Model API (optional — not shipped in the Python build)
 
 ```dotenv
 AI_PROVIDER=meta
@@ -190,9 +193,10 @@ META_BASE_URL=https://api.meta.ai/v1
 META_MODEL=muse-spark-1.3
 META_TIMEOUT_MS=45000
 META_MAX_RETRIES=2
-META_TOOLS=true
 AI_FALLBACK_ON_ERROR=true
 ```
+
+The Python backend ships the **Gemini** provider. If `AI_PROVIDER=meta` is selected, or Gemini is not configured, MIRAIWERK responds with labelled deterministic rules and records `degraded`/`notice` accordingly. Meta is never claimed as output.
 
 Restart the API process, then check:
 
@@ -233,14 +237,14 @@ npm run db:seed
 
 ### API returns `401 UNAUTHENTICATED`
 
-The access token is missing, expired and could not be refreshed, or an `x-user-id` header references a deleted user. Sign in again, or use a known demo identity:
+The access token is missing, expired and could not be refreshed, or an `x-user-id` header references a deleted user. There is deliberately no implicit anonymous fallback — sign in again, or use a known demo identity explicitly:
 
 ```bash
 curl -s http://localhost:4000/api/projects \
   -H 'x-user-id: usr_maya'
 ```
 
-Without a bearer token or header, the API falls back to the seeded demo user (`maya.chen@miraiwerk.demo`). If the seed has not run, that user does not exist.
+Without a bearer token or the demo header, the API returns `401 UNAUTHENTICATED`. If the seed has not run, the demo users do not exist.
 
 ### Approval returns `403 FORBIDDEN`
 
@@ -264,7 +268,7 @@ Confirm `VITE_API_BASE_URL` points at `http://localhost:4000/api` and that the A
 
 ### Model calls time out
 
-Increase `GEMINI_TIMEOUT_MS`/`META_TIMEOUT_MS` or set `META_TOOLS=false` to skip the read-only Meta tool loop. The deterministic fallback remains available.
+Increase `GEMINI_TIMEOUT_MS`, or lower `GEMINI_MAX_RETRIES`. If a configured call fails, `AI_FALLBACK_ON_ERROR=true` serves labelled deterministic rules instead of a 502; there is also `AI_PROVIDER=deterministic` to opt out of network calls entirely.
 
 ### E2E browser cannot start
 
