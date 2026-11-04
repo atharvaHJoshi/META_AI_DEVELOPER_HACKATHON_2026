@@ -106,6 +106,8 @@ The backend is a modular monolith: one deployable ASGI app serving both the API 
 │   └── schemas/              Shared Zod contracts and TypeScript types (frontend)
 ├── e2e/                      Playwright browser journeys
 ├── docs/                     Architecture, API, setup, evidence contract, progress report
+├── run-backend.sh            Start Django + FastAPI (migrations, static, :4000)
+├── run-frontend.sh           Start the Vite dev server (:5173)
 ├── docker-compose.yml        PostgreSQL 16 on host port 55434
 └── .env.example              Safe configuration template (no secrets)
 ```
@@ -145,9 +147,14 @@ npm run db:seed      # curated demo scenario (deterministic rules; --ai to use a
 
 ### 4. Run the app
 
+Run each script in its own terminal:
+
 ```bash
-npm run dev
+./run-backend.sh    # Django + FastAPI on :4000
+./run-frontend.sh   # Vite dev server on :5173
 ```
+
+Or start both together with `npm run dev`.
 
 - Frontend: <http://localhost:5173>
 - API: <http://localhost:4000/api> (health: <http://localhost:4000/api/health>)
