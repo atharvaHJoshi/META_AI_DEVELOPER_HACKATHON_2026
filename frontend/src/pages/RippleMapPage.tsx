@@ -509,7 +509,7 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
                     ["Milestones", `${plan.milestones.length} → ${scenario.milestones.length}`, scenario.metrics.milestonesBreached],
                   ].map(([label, value, delta]) => (
                     <div key={String(label)} className="rounded-md border border-line bg-surface-muted p-3">
-                      <p className="label">{label}</p>
+                      <p className="meta-label">{label}</p>
                       <p className="mt-1 text-sm font-semibold text-ink">{value}</p>
                       <p className={cn("mt-0.5 font-mono text-[10px]", Number(delta) > 0 ? "text-warning-600" : "text-ink-faint")}>
                         {Number(delta) > 0 ? `+${delta}` : delta}
@@ -520,12 +520,12 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-md border border-line bg-surface-muted p-3">
-                    <p className="label">Baseline</p>
+                    <p className="meta-label">Baseline</p>
                     <p className="mt-1 text-xs font-semibold text-ink">Plan v{proposal.basePlanVersion}</p>
                     <p className="mt-1 text-[10px] text-ink-muted">{plan.tasks.length} tasks · {Math.round(beforeEffort)} person-days · {plan.milestones.length} milestones</p>
                   </div>
                   <div className="rounded-md border border-primary-100 bg-primary-50 p-3">
-                    <p className="label">After approval</p>
+                    <p className="meta-label">After approval</p>
                     <p className="mt-1 text-xs font-semibold text-ink">Plan v{proposal.basePlanVersion + 1}</p>
                     <p className="mt-1 text-[10px] text-ink-muted">{afterTaskCount} tasks · {Math.round(scenario.metrics.totalEffortDays)} person-days · {scenario.milestones.length} milestones</p>
                   </div>
@@ -535,7 +535,7 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Card className="p-3">
-                    <p className="label">Capacity</p>
+                    <p className="meta-label">Capacity</p>
                     {scenario.capacity ? (
                       <>
                         <p className="mt-1 text-xs text-ink">
@@ -553,7 +553,7 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
                     )}
                   </Card>
                   <Card className="p-3">
-                    <p className="label">Policy findings</p>
+                    <p className="meta-label">Policy findings</p>
                     {scenario.policyFindings.length === 0 ? (
                       <p className="mt-1 text-xs text-ink-muted">No policy findings for this option.</p>
                     ) : (
@@ -577,7 +577,7 @@ function DecisionCard({ decisionId }: { decisionId: string }) {
 
                 {scenario.assumptions.length > 0 && (
                   <div>
-                    <p className="label mb-1.5">Scenario assumptions</p>
+                    <p className="meta-label mb-1.5">Scenario assumptions</p>
                     <ul className="space-y-1">{scenario.assumptions.map((assumption) => <li key={assumption} className="flex gap-1.5 text-[10px] leading-4 text-ink-muted"><Badge tone="amber">Inferred</Badge>{assumption}</li>)}</ul>
                   </div>
                 )}

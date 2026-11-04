@@ -297,15 +297,15 @@ export function OrganizationPage() {
             />
             <div className="grid gap-4 p-5 sm:grid-cols-3">
               <div>
-                <p className="label">Name</p>
+                <p className="meta-label">Name</p>
                 <p className="mt-1 text-sm font-semibold text-ink">{activeOrganization.name}</p>
               </div>
               <div>
-                <p className="label">Slug</p>
+                <p className="meta-label">Slug</p>
                 <p className="mt-1 font-mono text-xs text-ink-muted">{activeOrganization.slug}</p>
               </div>
               <div>
-                <p className="label">Your role</p>
+                <p className="meta-label">Your role</p>
                 <p className="mt-1 text-sm font-semibold text-ink">{roleLabel(orgRole)}</p>
               </div>
             </div>

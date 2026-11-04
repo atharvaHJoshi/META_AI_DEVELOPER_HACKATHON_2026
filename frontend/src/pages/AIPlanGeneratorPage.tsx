@@ -392,7 +392,7 @@ function DraftReview({
               ["Estimated effort", `${totalEstimate}d`],
             ].map(([label, value]) => (
               <div key={String(label)} className="rounded-md border border-line bg-surface-muted p-3">
-                <p className="label">{label}</p>
+                <p className="meta-label">{label}</p>
                 <p className="mt-1 text-xl font-semibold text-ink">{value}</p>
               </div>
             ))}
@@ -495,7 +495,7 @@ function DraftReview({
             <CardHeader title="Assumptions and unknowns" description="These stay visible in the project plan." />
             <div className="space-y-3 p-4">
               <div>
-                <p className="label mb-1.5">Assumptions (inferred)</p>
+                <p className="meta-label mb-1.5">Assumptions (inferred)</p>
                 {draft.assumptions.length ? (
                   <ul className="space-y-1.5">
                     {draft.assumptions.map((assumption) => (
@@ -505,7 +505,7 @@ function DraftReview({
                 ) : <p className="text-[11px] text-ink-faint">None recorded.</p>}
               </div>
               <div>
-                <p className="label mb-1.5">Missing information (unknown)</p>
+                <p className="meta-label mb-1.5">Missing information (unknown)</p>
                 {draft.missingInformation.length ? (
                   <ul className="space-y-1.5">
                     {draft.missingInformation.map((item) => (
@@ -516,7 +516,7 @@ function DraftReview({
               </div>
               {draft.risks.length > 0 && (
                 <div>
-                  <p className="label mb-1.5">Risks</p>
+                  <p className="meta-label mb-1.5">Risks</p>
                   <ul className="space-y-2">
                     {draft.risks.map((risk) => (
                       <li key={risk.title} className="rounded-md border border-line bg-surface-muted p-2.5">

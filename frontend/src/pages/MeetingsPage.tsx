@@ -337,7 +337,7 @@ export function MeetingsPage() {
                 <div className="space-y-4 p-5">
                   {selected.summary ? (
                     <div className="rounded-md border border-line bg-surface-muted p-3">
-                      <p className="label mb-1">Stored summary</p>
+                      <p className="meta-label mb-1">Stored summary</p>
                       <p className="whitespace-pre-wrap text-xs leading-5 text-ink-soft">{selected.summary}</p>
                     </div>
                   ) : (
@@ -346,7 +346,7 @@ export function MeetingsPage() {
 
                   <div>
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <p className="label mb-0">Action items</p>
+                      <p className="meta-label mb-0">Action items</p>
                       {selected.actionItems.length > 0 && canEdit && (
                         <div className="flex flex-wrap items-center gap-2">
                           {!selected.projectId && (

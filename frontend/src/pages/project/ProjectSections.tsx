@@ -490,28 +490,28 @@ export function ProjectOverview({
           <CardHeader title="Project brief" description="Goal and delivery constraints captured with the approved plan." />
           <div className="space-y-4 p-5">
             <div>
-              <p className="label">Goal</p>
+              <p className="meta-label">Goal</p>
               <p className="mt-1 text-sm leading-6 text-ink-soft">{plan.project.goal}</p>
             </div>
             <div>
-              <p className="label">Description</p>
+              <p className="meta-label">Description</p>
               <p className="mt-1 text-sm leading-6 text-ink-muted">{plan.project.description}</p>
             </div>
             <dl className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md border border-line bg-surface-muted p-3">
-                <dt className="label">Start date</dt>
+                <dt className="meta-label">Start date</dt>
                 <dd className="mt-1 text-sm text-ink">{formatDate(plan.project.startDate)}</dd>
               </div>
               <div className="rounded-md border border-line bg-surface-muted p-3">
-                <dt className="label">Target date</dt>
+                <dt className="meta-label">Target date</dt>
                 <dd className="mt-1 text-sm text-ink">{formatDate(plan.project.targetDate)}</dd>
               </div>
               <div className="rounded-md border border-line bg-surface-muted p-3">
-                <dt className="label">Plan version</dt>
+                <dt className="meta-label">Plan version</dt>
                 <dd className="mt-1 text-sm text-ink">v{plan.version}</dd>
               </div>
               <div className="rounded-md border border-line bg-surface-muted p-3">
-                <dt className="label">Project role</dt>
+                <dt className="meta-label">Project role</dt>
                 <dd className="mt-1 text-sm text-ink">{titleCase(plan.project.role)}</dd>
               </div>
             </dl>

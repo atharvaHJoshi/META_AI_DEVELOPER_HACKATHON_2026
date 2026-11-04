@@ -41,6 +41,27 @@ test.describe("Mermaid documentation diagrams", () => {
     await expect(preview.getByTestId("mermaid-diagram").locator("svg")).toBeVisible();
     await expect(preview.getByText("Approve plan")).toBeVisible();
 
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(preview).toBeVisible();
+    // The viewport resize triggers a layout pass; wait for it to settle before
+    // measuring so transient desktop-width overflow is not reported.
+    await expect
+      .poll(async () => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
+      .toBeLessThanOrEqual(0);
+    const mobileLayout = await page.evaluate(() => {
+      const sourceRect = document.getElementById("doc-content")?.getBoundingClientRect();
+      const previewRect = document.querySelector('[data-testid="mermaid-preview"]')?.getBoundingClientRect();
+      return {
+        horizontalOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        stacked: Boolean(sourceRect && previewRect && previewRect.top >= sourceRect.bottom),
+        previewWidth: previewRect?.width ?? 0,
+      };
+    });
+    expect(mobileLayout.horizontalOverflow).toBeLessThanOrEqual(0);
+    expect(mobileLayout.stacked).toBe(true);
+    expect(mobileLayout.previewWidth).toBeLessThanOrEqual(375);
+    await expect(preview.getByTestId("mermaid-diagram").locator("svg")).toBeVisible();
+
     await page.getByRole("button", { name: "Delete E2E Mermaid diagram" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete document" }).click();
     await expect(page.getByText("Document deleted.")).toBeVisible();

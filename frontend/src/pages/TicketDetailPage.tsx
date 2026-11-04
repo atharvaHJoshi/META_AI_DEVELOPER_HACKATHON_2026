@@ -147,21 +147,21 @@ export function TicketDetailPage() {
                   ["Reporter", ticket.reporter || "Unknown"],
                 ].map(([label, value]) => (
                   <div key={label} className="rounded-md border border-line bg-surface-muted p-3">
-                    <p className="label">{label}</p>
+                    <p className="meta-label">{label}</p>
                     <p className="mt-1 text-xs text-ink">{value}</p>
                   </div>
                 ))}
               </div>
               <div>
-                <p className="label mb-1">Description</p>
+                <p className="meta-label mb-1">Description</p>
                 <p className="whitespace-pre-wrap text-sm leading-6 text-ink-soft">{ticket.description}</p>
               </div>
               <div>
-                <p className="label mb-1">Reported impact</p>
+                <p className="meta-label mb-1">Reported impact</p>
                 <p className="whitespace-pre-wrap text-sm leading-6 text-ink-soft">{ticket.reportedImpact || "Not provided."}</p>
               </div>
               <div>
-                <p className="label mb-1">Evidence supplied</p>
+                <p className="meta-label mb-1">Evidence supplied</p>
                 <div className="rounded-md border border-line bg-surface-muted p-3">
                   <p className="whitespace-pre-wrap text-xs leading-5 text-ink-soft">{ticket.evidence || "No evidence was supplied with the ticket."}</p>
                 </div>
@@ -179,7 +179,7 @@ export function TicketDetailPage() {
                 />
                 <div className="grid gap-4 p-5 lg:grid-cols-2">
                   <div>
-                    <p className="label mb-2">Claims</p>
+                    <p className="meta-label mb-2">Claims</p>
                     {proposal.evidence.length === 0 ? (
                       <p className="text-xs text-ink-faint">No evidence items recorded.</p>
                     ) : (
@@ -199,7 +199,7 @@ export function TicketDetailPage() {
                   </div>
                   <div className="space-y-4">
                     <div>
-                      <p className="label mb-2">Unknowns</p>
+                      <p className="meta-label mb-2">Unknowns</p>
                       {proposal.unknowns.length === 0 ? <p className="text-xs text-ink-faint">None recorded.</p> : (
                         <ul className="space-y-1.5">
                           {proposal.unknowns.map((unknown) => (
@@ -209,7 +209,7 @@ export function TicketDetailPage() {
                       )}
                     </div>
                     <div>
-                      <p className="label mb-2">Clarifying questions</p>
+                      <p className="meta-label mb-2">Clarifying questions</p>
                       {proposal.clarifyingQuestions.length === 0 ? <p className="text-xs text-ink-faint">No clarification requested.</p> : (
                         <ol className="list-decimal space-y-1.5 pl-4">
                           {proposal.clarifyingQuestions.map((question) => (
@@ -226,7 +226,7 @@ export function TicketDetailPage() {
                 <CardHeader title="Related records and duplicates" description="Links use explicit evidence states. Duplicate candidates are never merged automatically." />
                 <div className="grid gap-4 p-5 lg:grid-cols-2">
                   <div>
-                    <p className="label mb-2">Related records</p>
+                    <p className="meta-label mb-2">Related records</p>
                     {proposal.relatedRecords.length === 0 ? <p className="text-xs text-ink-faint">No related records found.</p> : (
                       <ul className="space-y-2">
                         {proposal.relatedRecords.map((record) => (
@@ -243,7 +243,7 @@ export function TicketDetailPage() {
                     )}
                   </div>
                   <div>
-                    <p className="label mb-2">Duplicate candidates</p>
+                    <p className="meta-label mb-2">Duplicate candidates</p>
                     {proposal.duplicateCandidates.length === 0 ? <p className="text-xs text-ink-faint">No duplicate candidates.</p> : (
                       <ul className="space-y-2">
                         {proposal.duplicateCandidates.map((candidate) => (
@@ -307,7 +307,7 @@ export function TicketDetailPage() {
                 </div>
                 <div className="space-y-3 p-5">
                   <div>
-                    <p className="label">Why this recommendation</p>
+                    <p className="meta-label">Why this recommendation</p>
                     <p className="mt-1 text-xs leading-5 text-ink-soft">{proposal.recommendationRationale}</p>
                   </div>
                   <div className="rounded-md border border-line bg-surface-muted p-3">
@@ -316,7 +316,7 @@ export function TicketDetailPage() {
                     <p className="mt-1 text-[11px] leading-5 text-ink-muted"><strong className="text-ink">Impact:</strong> {proposal.classification.businessImpact}</p>
                   </div>
                   <div>
-                    <p className="label">Policy outcome</p>
+                    <p className="meta-label">Policy outcome</p>
                     <p className="mt-1 text-[11px] text-ink-muted">
                       Model priority {proposal.policy.modelPriority} → final {proposal.policy.finalPriority} · {proposal.policy.responseWindowLabel}
                       {proposal.policy.escalated && " · escalated"}

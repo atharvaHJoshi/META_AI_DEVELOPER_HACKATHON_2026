@@ -235,7 +235,7 @@ export function DocsPage() {
       ) : error ? (
         <ErrorBlock message={error} onRetry={() => void reload()} />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
+        <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
           <Card className="h-fit overflow-hidden">
             <div className="border-b border-line px-4 py-3">
               <p className="text-xs font-semibold text-ink">Library</p>
@@ -326,8 +326,8 @@ export function DocsPage() {
                   </Field>
                 </div>
 
-                <div className={cn(draft.docType === "diagram" && "grid gap-4 xl:grid-cols-2")}>
-                  <div className="min-w-0">
+                <div className={cn(draft.docType === "diagram" && "grid items-stretch gap-4 2xl:grid-cols-2")}>
+                  <div className={cn("min-w-0", draft.docType === "diagram" && "flex flex-col")}>
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                       <label htmlFor="doc-content" className="field-label mb-0">
                         {draft.docType === "diagram" ? "Diagram source (Mermaid)" : "Markdown content"}
@@ -338,7 +338,10 @@ export function DocsPage() {
                       id="doc-content"
                       value={draft.content}
                       onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
-                      className={cn("min-h-[420px] font-mono text-xs leading-6", draft.docType === "diagram" && "bg-surface-muted")}
+                      className={cn(
+                        "min-h-[420px] font-mono text-xs leading-6",
+                        draft.docType === "diagram" && "flex-1 bg-surface-muted",
+                      )}
                       placeholder={
                         draft.docType === "diagram"
                           ? "graph TD\n  ticket[Ticket] --> proposal[Decision proposal]\n  proposal --> ripple[RippleMap simulation]\n  ripple --> approval[Human approval]"
