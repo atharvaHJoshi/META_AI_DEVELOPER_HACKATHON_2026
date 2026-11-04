@@ -45,14 +45,14 @@ Brief ──► Generated plan ──► Ticket intake ──► AI analysis
 - Optional Meta OAuth sign-in, session listing/revocation, password reset and a seeded demo-login path.
 - Projects, teams, task board (Kanban), task dependencies, milestones, roadmap and workload views.
 - Documentation records, meeting scheduling with AI summaries and action-item conversion, discussion threads with replies and solved state.
-- Markdown notes and Mermaid diagram records with a lazy-loaded live preview, inline syntax errors and AI-assisted diagram drafts.
+- Markdown notes with `Write / Preview / Split` tabs, a sanitised GFM renderer and an empty-state preview; Mermaid diagram records with a responsive split workbench, lazy-loaded live rendering, inline syntax errors and AI-assisted drafts.
 - Workspace audit trail, organization management, settings and a read-only code-workspace surface.
 
 ### AI and trust
 - Google Gemini adapter by default, with an optional Meta Model API adapter — both use JSON-schema structured responses, bounded retries, timeouts and read-only tools.
 - A labelled deterministic mode (`miraiwerk-rules-v1`) whenever no provider key is configured; it is never presented as a model result.
 - Explicit `degraded` labelling when a configured model call fails and fallback is enabled.
-- A 40-case labelled evaluation benchmark with generated reports.
+- A 40-case labelled evaluation benchmark with generated reports. The data and report are preserved in git history from the TypeScript AIML package; porting the harness to the Python rules is tracked in the progress report.
 
 ## Stack
 
@@ -273,7 +273,7 @@ npm run test:e2e         # Playwright journeys (starts its own dev servers)
 
 - `backend/ripplemap`: scheduling, cycle detection, scenario validity, milestone deltas, critical path, deterministic hashing — verified against the original TypeScript engine output.
 - `backend`: isolated PostgreSQL integration tests for project creation, ticket analysis, simulation, approval versioning, stale rejection, scenario requirements, defer semantics, RBAC and validation errors.
-- `frontend`: formatting helpers and shared UI primitives.
+- `frontend`: formatting helpers, shared UI primitives and the Markdown preview renderer.
 - `e2e`: sign-in/access, viewer permissions, RippleMap approval, ticket intake and analysis, Kanban, documentation, discussions, meetings, responsive navigation and API failure states.
 
 The backend integration suite requires the database container and Django migrations to be running.
