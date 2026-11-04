@@ -41,6 +41,23 @@ test.describe("Mermaid documentation diagrams", () => {
     await expect(preview.getByTestId("mermaid-diagram").locator("svg")).toBeVisible();
     await expect(preview.getByText("Approve plan")).toBeVisible();
 
+    // Desktop uses a contained split-pane editor: source and preview sit side
+    // by side at lg+, share the same 60vh height, and scroll inside their own
+    // panes instead of making the whole page taller.
+    const desktopLayout = await page.evaluate(() => {
+      const sourceRect = document.getElementById("doc-content")?.getBoundingClientRect();
+      const previewRect = document.querySelector('[data-testid="mermaid-preview"]')?.getBoundingClientRect();
+      return {
+        sideBySide: Boolean(sourceRect && previewRect && previewRect.left >= sourceRect.right - 1),
+        sourceHeight: Math.round(sourceRect?.height ?? 0),
+        previewHeight: Math.round(previewRect?.height ?? 0),
+        previewWidth: Math.round(previewRect?.width ?? 0),
+      };
+    });
+    expect(desktopLayout.sideBySide).toBe(true);
+    expect(Math.abs(desktopLayout.sourceHeight - desktopLayout.previewHeight)).toBeLessThanOrEqual(2);
+    expect(desktopLayout.previewWidth).toBeGreaterThan(320);
+
     await page.setViewportSize({ width: 375, height: 812 });
     await expect(preview).toBeVisible();
     // The viewport resize triggers a layout pass; wait for it to settle before

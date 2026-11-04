@@ -235,7 +235,7 @@ export function DocsPage() {
       ) : error ? (
         <ErrorBlock message={error} onRetry={() => void reload()} />
       ) : (
-        <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
+        <div className="grid gap-5 2xl:grid-cols-[280px_1fr]">
           <Card className="h-fit overflow-hidden">
             <div className="border-b border-line px-4 py-3">
               <p className="text-xs font-semibold text-ink">Library</p>
@@ -250,7 +250,7 @@ export function DocsPage() {
                 compact
               />
             ) : (
-              <nav className="max-h-[calc(100vh-260px)] overflow-y-auto p-2" aria-label="Documents">
+              <nav className="max-h-[calc(100vh-260px)] overflow-y-auto p-2 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4 2xl:block" aria-label="Documents">
                 <DocGroup
                   label="Notes"
                   icon={FileText}
@@ -326,8 +326,8 @@ export function DocsPage() {
                   </Field>
                 </div>
 
-                <div className={cn(draft.docType === "diagram" && "grid items-stretch gap-4 2xl:grid-cols-2")}>
-                  <div className={cn("min-w-0", draft.docType === "diagram" && "flex flex-col")}>
+                <div className={cn(draft.docType === "diagram" && "grid items-start gap-4 lg:grid-cols-2")}>
+                  <div className="min-w-0">
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                       <label htmlFor="doc-content" className="field-label mb-0">
                         {draft.docType === "diagram" ? "Diagram source (Mermaid)" : "Markdown content"}
@@ -339,8 +339,10 @@ export function DocsPage() {
                       value={draft.content}
                       onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
                       className={cn(
-                        "min-h-[420px] font-mono text-xs leading-6",
-                        draft.docType === "diagram" && "flex-1 bg-surface-muted",
+                        "font-mono text-xs leading-6",
+                        draft.docType === "diagram"
+                          ? "h-[60vh] min-h-[420px] resize-none bg-surface-muted"
+                          : "min-h-[420px]",
                       )}
                       placeholder={
                         draft.docType === "diagram"
@@ -364,7 +366,7 @@ export function DocsPage() {
                         <span className="field-label mb-0">Live preview</span>
                         <span className="text-[10px] text-ink-faint">Mermaid · rendered locally</span>
                       </div>
-                      <MermaidDiagram source={draft.content} />
+                      <MermaidDiagram source={draft.content} className="h-[60vh]" />
                     </div>
                   )}
                 </div>

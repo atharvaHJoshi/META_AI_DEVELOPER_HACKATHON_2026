@@ -102,7 +102,7 @@ export function MermaidDiagram({
       aria-label="Diagram preview"
       aria-busy={status === "rendering"}
       className={cn(
-        "relative flex min-h-[420px] flex-col overflow-auto rounded-md border border-line bg-surface-muted p-4",
+        "relative flex min-h-[320px] flex-col overflow-auto rounded-md border border-line bg-surface-muted p-4",
         className,
       )}
     >
