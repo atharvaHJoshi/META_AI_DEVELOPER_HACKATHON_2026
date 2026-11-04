@@ -814,6 +814,23 @@ def test_document_ai_draft_and_usage() -> None:
     assert body["degraded"] is True
     assert body["text"]
 
+    diagram = client.post(
+        "/api/ai/documents/draft",
+        headers=_auth(state["ownerToken"]),
+        json={
+            "workspaceId": workspace_id,
+            "projectId": state["projectId"],
+            "title": "Retry decision diagram",
+            "outline": "Ticket evidence enters analysis, RippleMap simulates impact, then a human approves.",
+            "docType": "diagram",
+        },
+    )
+    assert diagram.status_code == 200, diagram.text
+    diagram_body = diagram.json()
+    assert diagram_body["provider"] == "deterministic-demo"
+    assert diagram_body["text"].lstrip().startswith("flowchart ")
+    assert "Retry decision diagram" in diagram_body["text"]
+
     usage = client.get(
         f"/api/ai/usage?workspaceId={workspace_id}", headers=_auth(state["ownerToken"])
     )

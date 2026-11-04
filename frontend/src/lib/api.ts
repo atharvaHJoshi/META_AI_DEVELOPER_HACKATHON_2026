@@ -428,6 +428,7 @@ export const api = {
       projectId?: string | null;
       title: string;
       outline: string;
+      docType?: "markdown" | "diagram";
     }) => post<AssistResponse>("/ai/documents/draft", input),
   },
 

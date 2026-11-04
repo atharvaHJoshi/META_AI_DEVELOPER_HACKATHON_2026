@@ -45,6 +45,7 @@ Brief ──► Generated plan ──► Ticket intake ──► AI analysis
 - Optional Meta OAuth sign-in, session listing/revocation, password reset and a seeded demo-login path.
 - Projects, teams, task board (Kanban), task dependencies, milestones, roadmap and workload views.
 - Documentation records, meeting scheduling with AI summaries and action-item conversion, discussion threads with replies and solved state.
+- Markdown notes and Mermaid diagram records with a lazy-loaded live preview, inline syntax errors and AI-assisted diagram drafts.
 - Workspace audit trail, organization management, settings and a read-only code-workspace surface.
 
 ### AI and trust
@@ -57,7 +58,7 @@ Brief ──► Generated plan ──► Ticket intake ──► AI analysis
 
 | Layer | Choice |
 | --- | --- |
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS, React Router |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, React Router, Mermaid |
 | Backend | Python 3.12+, Django 6 (ORM, migrations, admin) + FastAPI, Pydantic |
 | AIML | `backend/aiml` — Gemini + deterministic rules + policy (Meta provider not shipped in the Python build) |
 | Data | PostgreSQL 16 |

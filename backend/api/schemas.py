@@ -392,3 +392,4 @@ class DraftDocumentInput(StrictModel):
     projectId: str | None = None
     title: str = Field(min_length=2, max_length=200)
     outline: str = Field(min_length=3, max_length=20_000)
+    docType: Literal["markdown", "diagram"] = "markdown"

@@ -13,7 +13,13 @@ test.describe("RippleMap critical decision journey", () => {
     await expect(page.getByRole("heading", { name: "Review change impact" })).toBeVisible();
     await expect(page.getByText("Changing the option runs a new deterministic simulation.")).toBeVisible();
 
-    const simulateButton = page.getByRole("button", { name: /Simulate/ });
+    // The card auto-simulates the analyser's recommendation. Wait for that
+    // simulation before explicitly switching to the full accept option, so
+    // the test does not depend on which recommendation the seeded queue opens.
+    await expect(page.getByText("Valid scenario")).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: /^Accept change/ }).click();
+
+    const simulateButton = page.getByRole("button", { name: /Simulate impact/ });
     await expect(simulateButton).toBeEnabled();
     await simulateButton.click();
 

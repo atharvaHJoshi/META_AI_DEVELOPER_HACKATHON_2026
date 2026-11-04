@@ -144,6 +144,8 @@ Authorization is enforced server-side on every project- and workspace-scoped ser
 | `POST` | `/ai/documents/draft` | Draft document content |
 | `GET` | `/ai/usage` | AI usage grouped by workflow (optional `?workspaceId=`) |
 
+`POST /ai/documents/draft` returns Markdown by default. Send `"docType": "diagram"` to request Mermaid source for a diagram document; the deterministic fallback is labelled and still returns valid Mermaid syntax.
+
 
 ## Error responses
 

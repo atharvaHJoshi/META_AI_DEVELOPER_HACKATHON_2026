@@ -163,3 +163,18 @@ textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * Mermaid uses `.label` for its own SVG text groups. Reset the application's
+ * `.label` eyebrow utility inside the preview so diagram labels keep the
+ * diagram's typography instead of becoming tiny, uppercase monospace.
+ */
+.mermaid-diagram .label {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  color: inherit;
+  line-height: inherit;
+}

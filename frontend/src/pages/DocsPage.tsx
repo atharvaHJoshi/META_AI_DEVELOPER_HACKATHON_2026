@@ -12,6 +12,7 @@ import {
   Trash2,
 } from "lucide-react";
 import type { Document } from "@miraiwerk/schemas";
+import { MermaidDiagram } from "../components/MermaidDiagram";
 import { useWorkspace } from "../context/WorkspaceContext";
 import { useToast } from "../context/ToastContext";
 import { api, ApiError } from "../lib/api";
@@ -188,6 +189,7 @@ export function DocsPage() {
         projectId: selected?.projectId ?? null,
         title: draft.title.trim() || "Untitled document",
         outline: outline.trim(),
+        docType: draft.docType,
       });
       setDraftState({ ...draft, content: result.text });
       setAiNotice(result.degraded ? `${result.notice} — labelled deterministic draft.` : `${result.provider} · ${result.model}. Review before saving.`);
@@ -211,7 +213,7 @@ export function DocsPage() {
       <PageHeader
         eyebrow={activeWorkspace?.name}
         title="Documentation & Diagrams"
-        description="Decision records, delivery notes and dependency diagrams kept next to the plan. Content is persisted in the workspace; diagram source is stored, rendering is explicitly marked as unavailable."
+        description="Decision records, delivery notes and dependency diagrams kept next to the plan. Diagram source renders as a live Mermaid preview and is versioned with the document."
         actions={
           canEdit ? (
             <Button variant="primary" onClick={() => setCreateOpen(true)}>
@@ -324,34 +326,45 @@ export function DocsPage() {
                   </Field>
                 </div>
 
-                <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <label htmlFor="doc-content" className="field-label mb-0">
-                      {draft.docType === "diagram" ? "Diagram source (Mermaid-compatible text)" : "Markdown content"}
-                    </label>
-                    <span className="font-mono text-[10px] text-ink-faint">{draft.content.length.toLocaleString()} chars</span>
+                <div className={cn(draft.docType === "diagram" && "grid gap-4 xl:grid-cols-2")}>
+                  <div className="min-w-0">
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <label htmlFor="doc-content" className="field-label mb-0">
+                        {draft.docType === "diagram" ? "Diagram source (Mermaid)" : "Markdown content"}
+                      </label>
+                      <span className="font-mono text-[10px] text-ink-faint">{draft.content.length.toLocaleString()} chars</span>
+                    </div>
+                    <Textarea
+                      id="doc-content"
+                      value={draft.content}
+                      onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
+                      className={cn("min-h-[420px] font-mono text-xs leading-6", draft.docType === "diagram" && "bg-surface-muted")}
+                      placeholder={
+                        draft.docType === "diagram"
+                          ? "graph TD\n  ticket[Ticket] --> proposal[Decision proposal]\n  proposal --> ripple[RippleMap simulation]\n  ripple --> approval[Human approval]"
+                          : "# Context\n\n## Decision\n\n## Evidence\n\n## Consequences"
+                      }
+                      disabled={!canEdit}
+                      spellCheck={draft.docType === "markdown"}
+                    />
+                    {draft.docType === "diagram" && (
+                      <p className="mt-1.5 text-[10px] leading-5 text-ink-faint">
+                        Mermaid syntax. Flowcharts, sequence, state, ER, class, gantt, journey, pie, mindmap, timeline and git
+                        diagrams are supported. Rendering is local; source is saved with the document.
+                      </p>
+                    )}
                   </div>
-                  <Textarea
-                    id="doc-content"
-                    value={draft.content}
-                    onChange={(event) => setDraftState({ ...draft, content: event.target.value })}
-                    className={cn("min-h-[420px] font-mono text-xs leading-6", draft.docType === "diagram" && "bg-surface-muted")}
-                    placeholder={
-                      draft.docType === "diagram"
-                        ? "graph TD\n  ticket[Ticket] --> proposal[Decision proposal]\n  proposal --> ripple[RippleMap simulation]\n  ripple --> approval[Human approval]"
-                        : "# Context\n\n## Decision\n\n## Evidence\n\n## Consequences"
-                    }
-                    disabled={!canEdit}
-                    spellCheck={draft.docType === "markdown"}
-                  />
-                </div>
 
-                {draft.docType === "diagram" && (
-                  <Alert tone="warning" title="Diagram rendering is deferred">
-                    Diagram source is stored and versioned with the document, but this build does not include a Mermaid
-                    renderer. No graphical preview is fabricated. The source remains reviewable and exportable by copying it.
-                  </Alert>
-                )}
+                  {draft.docType === "diagram" && (
+                    <div className="min-w-0">
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <span className="field-label mb-0">Live preview</span>
+                        <span className="text-[10px] text-ink-faint">Mermaid · rendered locally</span>
+                      </div>
+                      <MermaidDiagram source={draft.content} />
+                    </div>
+                  )}
+                </div>
 
                 {selected.projectId && (
                   <p className="text-[10px] text-ink-faint">
@@ -403,8 +416,12 @@ export function DocsPage() {
       <Modal
         open={aiOpen}
         onOpenChange={setAiOpen}
-        title="Draft with AI"
-        description="Gemini (or the labelled deterministic fallback) drafts content from your outline. Nothing is saved until you review and save."
+        title={draft?.docType === "diagram" ? "Draft diagram with AI" : "Draft with AI"}
+        description={
+          draft?.docType === "diagram"
+            ? "Gemini (or the labelled deterministic fallback) proposes Mermaid source from your outline. Nothing is saved until you review the live preview and save."
+            : "Gemini (or the labelled deterministic fallback) drafts content from your outline. Nothing is saved until you review and save."
+        }
         footer={
           <>
             <Button variant="ghost" onClick={() => setAiOpen(false)}>Cancel</Button>
@@ -416,8 +433,27 @@ export function DocsPage() {
       >
         <div className="space-y-3">
           {aiError && <Alert tone="danger">{aiError}</Alert>}
-          <Field label="Outline" htmlFor="ai-outline" required hint="State the decision, evidence, constraints and open questions. The draft will not be auto-saved.">
-            <Textarea id="ai-outline" className="min-h-32" value={outline} onChange={(event) => setOutline(event.target.value)} placeholder="Decision: defer payments release gate by one week. Evidence: double-charge incident…" />
+          <Field
+            label="Outline"
+            htmlFor="ai-outline"
+            required
+            hint={
+              draft?.docType === "diagram"
+                ? "Describe the steps, actors, evidence and decision points the diagram should show. The draft will not be auto-saved."
+                : "State the decision, evidence, constraints and open questions. The draft will not be auto-saved."
+            }
+          >
+            <Textarea
+              id="ai-outline"
+              className="min-h-32"
+              value={outline}
+              onChange={(event) => setOutline(event.target.value)}
+              placeholder={
+                draft?.docType === "diagram"
+                  ? "Ticket evidence enters intake, analysis proposes options, RippleMap simulates impact, a human owner approves or asks for clarification."
+                  : "Decision: defer payments release gate by one week. Evidence: double-charge incident…"
+              }
+            />
           </Field>
         </div>
       </Modal>

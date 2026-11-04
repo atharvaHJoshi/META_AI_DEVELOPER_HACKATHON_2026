@@ -27,7 +27,15 @@ def _deterministic_assist(input_data: dict) -> dict:
         if line.strip()
     ][:20]
     if input_data.get("kind") == "diagram":
-        body = "flowchart TD\n  A[Meeting notes] --> B[Review]\n  B --> C[Action items]\n  C --> D[Tasks]"
+        title = re.sub(r"[^A-Za-z0-9 _\-.,:/]", "", str(input_data.get("title") or "Document"))[:60].strip()
+        body = (
+            "flowchart TD\n"
+            f"  A[{title or 'Document'}] --> B[Review evidence]\n"
+            "  B --> C[Decision]\n"
+            "  C --> D{Human approval}\n"
+            "  D -->|accept| E[Plan version]\n"
+            "  D -->|clarify| B"
+        )
     elif lines:
         body = "Draft (deterministic fallback)\n\n" + "\n".join(f"- {line}" for line in lines)
     else:
@@ -105,18 +113,35 @@ def draft_document(user_id: str, workspace_id: str, input_data: dict) -> dict:
     else:
         authz.assert_workspace_access(user_id, workspace_id)
     context = _workspace_context(workspace_id)
+    is_diagram = input_data.get("docType") == "diagram"
+    if is_diagram:
+        system = (
+            SAFETY
+            + "\nYou draft Mermaid diagrams. Return only valid Mermaid diagram source, with no Markdown code fences, "
+            "commentary or surrounding prose. Use descriptive node labels and keep the structure grounded in the outline."
+        )
+        prompt = (
+            f"Workspace AI context (authoritative preferences):\n{json.dumps(context)}\n\n"
+            f"Diagram title: {input_data['title']}\nOutline / source notes:\n{input_data['outline']}\n\n"
+            "Write Mermaid source for the clearest supported diagram type (usually flowchart TD). "
+            "Do not fabricate metrics, dates, evidence or identifiers. Do not wrap the source in code fences."
+        )
+    else:
+        system = (
+            SAFETY
+            + "\nYou draft Markdown documentation. Include headings, acceptance criteria where relevant, and explicitly mark unknowns."
+        )
+        prompt = (
+            f"Workspace AI context (authoritative preferences):\n{json.dumps(context)}\n\n"
+            f"Document title: {input_data['title']}\nOutline / source notes:\n{input_data['outline']}\n\n"
+            "Write a Markdown draft. Do not add fabricated metrics or deadlines."
+        )
     result = _run_assist(
         {
-            "system": (
-                SAFETY
-                + "\nYou draft Markdown documentation. Include headings, acceptance criteria where relevant, and explicitly mark unknowns."
-            ),
-            "prompt": (
-                f"Workspace AI context (authoritative preferences):\n{json.dumps(context)}\n\n"
-                f"Document title: {input_data['title']}\nOutline / source notes:\n{input_data['outline']}\n\n"
-                "Write a Markdown draft. Do not add fabricated metrics or deadlines."
-            ),
-            "kind": "document",
+            "system": system,
+            "prompt": prompt,
+            "kind": "diagram" if is_diagram else "document",
+            "title": input_data["title"],
             "maxTokens": 2_500,
         }
     )
