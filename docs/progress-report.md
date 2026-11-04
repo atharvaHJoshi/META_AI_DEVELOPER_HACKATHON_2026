@@ -52,7 +52,7 @@ All checks below were run on 4 November 2026 against the working tree described 
 | `cb9be53` | Made Mermaid previews responsive and fixed diagram-label truncation. |
 | `2311197` | Introduced the contained split-pane Mermaid workbench. |
 | `d29ee1e` / `0bf4379` | Added the Markdown preview and responsive Mermaid workbench documented in §5.5. |
-| _working tree_ | Phase 1/2: production config guardrails, shared rate limits, request IDs and security headers, append-only audit triggers, notification centre and preferences, transactional email, password recovery UI, E2E storage-state authentication and RippleMap simulation-race fix. |
+| `a740694` | Phase 1/2: production config guardrails, shared rate limits, request IDs and security headers, append-only audit triggers, notification centre and preferences, transactional email, password recovery UI, E2E storage-state authentication and RippleMap simulation-race fix. |
 
 ---
 
